@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sutra</title>
+  <meta name="description" content="Dein persönliches Stimmungstagebuch mit Medikamenten-Verlauf. Alle Daten bleiben in deinem Browser.">
+  <meta name="theme-color" content="#100f17">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sutra">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><use href="#i-mark"/></svg>
+        <span class="brand-name">Sutra</span>
+      </div>
+      <button class="icon-btn" id="btn-settings" type="button" aria-label="Daten und Einstellungen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-settings"/></svg>
+      </button>
+    </header>
+
+    <div id="banners" class="banners"></div>
+
+    <main id="main">
+      <!-- ============ HEUTE ============ -->
+      <section class="view" id="view-heute" data-view="heute" aria-labelledby="h-heute">
+        <div class="greeting">
+          <p class="eyebrow" id="today-date"></p>
+          <h1 id="h-heute" class="display"></h1>
+        </div>
+
+        <form id="entry-form" class="card entry-card" autocomplete="off">
+          <div class="entry-head">
+            <div class="slots" role="radiogroup" aria-label="Tageszeit" id="slot-group"></div>
+            <label class="date-pill" for="entry-date">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-calendar"/></svg>
+              <span id="entry-date-label">Heute</span>
+              <input type="date" id="entry-date" name="date" required>
+            </label>
+          </div>
+
+          <fieldset class="mood-field">
+            <legend class="question" id="mood-question">Wie geht es dir gerade?</legend>
+            <div class="moods" id="mood-group" role="radiogroup" aria-labelledby="mood-question"></div>
+            <p class="mood-caption" id="mood-caption" aria-live="polite">Tippe auf ein Gesicht.</p>
+          </fieldset>
+
+          <label class="note-label" for="entry-note">Notiz <span class="optional">optional</span></label>
+          <textarea id="entry-note" name="note" rows="3" maxlength="1000" placeholder="Was beschäftigt dich? Wie hast du geschlafen?"></textarea>
+
+          <div class="form-actions">
+            <button type="button" class="btn ghost danger" id="btn-delete-entry" hidden>Eintrag löschen</button>
+            <button type="submit" class="btn primary" id="btn-save" disabled>Speichern</button>
+          </div>
+        </form>
+
+        <section class="card week-card" aria-labelledby="h-week">
+          <div class="card-head">
+            <h2 id="h-week" class="h2">Deine Woche</h2>
+            <p class="card-meta" id="week-meta"></p>
+          </div>
+          <div class="week" id="week-grid"></div>
+          <div class="mood-scale-legend" id="week-legend"></div>
+        </section>
+      </section>
+
+      <!-- ============ VERLAUF ============ -->
+      <section class="view" id="view-verlauf" data-view="verlauf" aria-labelledby="h-verlauf" hidden>
+        <div class="view-head">
+          <h1 id="h-verlauf" class="display">Verlauf</h1>
+          <div class="segmented" role="radiogroup" aria-label="Zeitraum" id="range-verlauf"></div>
+        </div>
+
+        <div class="stats" id="stats"></div>
+
+        <section class="card chart-card" aria-labelledby="h-mood-chart">
+          <div class="card-head">
+            <h2 id="h-mood-chart" class="h2">Stimmung über die Zeit</h2>
+          </div>
+          <div class="legend" id="mood-chart-legend"></div>
+          <div class="chart" id="mood-chart"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-slots">
+          <div class="card-head">
+            <h2 id="h-slots" class="h2">Nach Tageszeit</h2>
+            <p class="card-meta">Durchschnitt im gewählten Zeitraum</p>
+          </div>
+          <div class="slot-bars" id="slot-bars"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-entries">
+          <div class="card-head">
+            <h2 id="h-entries" class="h2">Alle Einträge</h2>
+            <p class="card-meta">Tippe auf einen Eintrag, um ihn zu ändern</p>
+          </div>
+          <div id="entry-list" class="entry-list"></div>
+          <button type="button" class="btn ghost wide" id="btn-more-entries" hidden>Ältere Einträge anzeigen</button>
+        </section>
+      </section>
+
+      <!-- ============ MEDIKAMENTE ============ -->
+      <section class="view" id="view-medis" data-view="medis" aria-labelledby="h-medis" hidden>
+        <div class="view-head">
+          <h1 id="h-medis" class="display">Medikamente</h1>
+        </div>
+
+        <section aria-labelledby="h-med-list">
+          <h2 id="h-med-list" class="visually-hidden">Deine Medikamente</h2>
+          <div class="med-list" id="med-list"></div>
+          <button type="button" class="btn dashed wide" id="btn-add-med">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg>
+            Medikament hinzufügen
+          </button>
+        </section>
+
+        <section class="card chart-card" aria-labelledby="h-med-chart">
+          <div class="card-head stack">
+            <h2 id="h-med-chart" class="h2">Stimmung &amp; Medikamente</h2>
+            <div class="segmented small" role="radiogroup" aria-label="Zeitraum" id="range-medis"></div>
+          </div>
+          <div class="legend" id="med-chart-legend"></div>
+          <div class="chart" id="med-chart"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-compare">
+          <div class="card-head">
+            <h2 id="h-compare" class="h2">Mit und ohne</h2>
+            <p class="card-meta">Ø Stimmung an Tagen mit und ohne Einnahme, im gewählten Zeitraum</p>
+          </div>
+          <div id="compare" class="compare"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-events">
+          <div class="card-head">
+            <h2 id="h-events" class="h2">Veränderungen</h2>
+            <p class="card-meta">4 Wochen vorher im Vergleich zu Woche 3 bis 6 danach</p>
+          </div>
+          <div id="events" class="events"></div>
+        </section>
+
+        <aside class="note-box">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"/></svg>
+          <p>Diese Auswertung zeigt, wie Stimmung und Einnahme zeitlich zusammenfallen. Sie zeigt keine Ursachen: Schlaf, Stress, Jahreszeit und vieles mehr wirken mit, und viele Medikamente brauchen mehrere Wochen bis zur vollen Wirkung. Nimm die Grafiken als Gesprächsgrundlage für deinen Arzttermin. Ändere Medikamente nie ohne ärztliche Rücksprache.</p>
+        </aside>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="Hauptnavigation">
+      <a href="#heute" class="tab" data-tab="heute">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-today"/></svg>
+        <span>Heute</span>
+      </a>
+      <a href="#verlauf" class="tab" data-tab="verlauf">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chart"/></svg>
+        <span>Verlauf</span>
+      </a>
+      <a href="#medis" class="tab" data-tab="medis">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pill"/></svg>
+        <span>Medikamente</span>
+      </a>
+    </nav>
+  </div>
+
+  <!-- Bottom sheet used for every dialog (forms, confirmations, settings) -->
+  <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+    <div class="sheet-inner">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <h2 id="sheet-title" class="h2"></h2>
+        <button type="button" class="icon-btn" id="sheet-close" aria-label="Schließen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </div>
+      <div id="sheet-body"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+  <!-- Icons -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-mark" viewBox="0 0 32 32">
+        <path d="M4 20c3.2 0 3.2-8 6.4-8s3.2 8 6.4 8 3.2-8 6.4-8 3.2 8 4.8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <circle cx="8" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      </symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24">
+        <rect x="3.5" y="5" width="17" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M3.5 10h17M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-today" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M8.5 13.5c1.8 2 5.2 2 7 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="9.2" cy="9.8" r="1.1" fill="currentColor"/><circle cx="14.8" cy="9.8" r="1.1" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24">
+        <path d="M3.5 17.5c2.5 0 3-7 6-7s3 4 5.5 4 3-8 5.5-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3.5 20.5h17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-pill" viewBox="0 0 24 24">
+        <g transform="rotate(-40 12 12)" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="2.8" y="8.2" width="18.4" height="7.6" rx="3.8"/>
+          <path d="M12 8.2v7.6"/>
+        </g>
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M12 11v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="12" cy="7.6" r="1.2" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-up" viewBox="0 0 24 24">
+        <path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-down" viewBox="0 0 24 24">
+        <path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-flat" viewBox="0 0 24 24">
+        <path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
