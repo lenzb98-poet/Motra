@@ -98,6 +98,8 @@ function openSheet(title, ...content) {
   $('#sheet-body').replaceChildren(h('div', { class: 'sheet-body' }, ...content));
   if (!sheet.open) sheet.showModal();
   sheet.scrollTop = 0;
+  // Start focus on the title, so the close button doesn't light up on open.
+  $('#sheet-title').focus({ preventScroll: true });
 }
 const closeSheet = () => sheet.open && sheet.close();
 $('#sheet-close').addEventListener('click', closeSheet);
