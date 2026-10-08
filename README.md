@@ -7,7 +7,7 @@ Alle Daten bleiben im Browser auf deinem Gerät (`localStorage`). Es gibt keinen
 ## Funktionen
 
 - **Heute:** Stimmung auf einer 5er-Skala von „Sehr schlecht“ bis „Sehr gut“, mit optionaler Notiz. Die Tageszeit wird automatisch vorgewählt. Vergangene Tage lassen sich nachtragen.
-- **Feinregler:** Nach dem Tippen auf ein Gesicht klappt darunter ein Regler auf, mit dem du Zwischenwerte wie 3,6 einstellst. Alternativ wischst du seitlich über die Gesichter. Pfeiltasten verschieben um 0,1, Bild auf/ab um 1.
+- **Feinregler:** Gesicht gedrückt halten und zur Seite ziehen: Unter den Gesichtern erscheint ein Regler für Zwischenwerte wie 3,6. Einfaches Tippen wählt weiter ganze Werte.
 - **Deine Woche:** Die letzten 7 Tage als Raster (Tageszeit × Tag). Ein Tipp auf ein Feld öffnet diesen Eintrag.
 - **Verlauf:** Durchschnitt, Veränderung zum Zeitraum davor, Grafik mit Einzelwerten, Tagesdurchschnitt und 7-Tage-Schnitt sowie Auswertung nach Tageszeit. Zeiträume: 7 Tage, 30 Tage, 90 Tage, 1 Jahr oder alles.
 - **Medikamente:** Name, Dosis und Startdatum erfassen, Dosis ändern, absetzen oder wieder aufnehmen. Darunter siehst du:

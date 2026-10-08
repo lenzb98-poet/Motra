@@ -302,7 +302,9 @@ main { display: block; }
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--mc) 22%, transparent), 0 8px 26px -6px color-mix(in srgb, var(--mc) 60%, transparent);
 }
 .mood-caption { margin: 12px 0 0; min-height: 1.4em; text-align: center; font-size: 13px; color: var(--muted); }
-.mood-caption .hint { display: block; margin-top: 2px; font-size: 12px; color: #6f6a82; }
+.mood-caption .hint { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+/* Keep room for the hint line while the slider is open, so nothing below jumps when it goes away. */
+.fine.open + .mood-caption { min-height: calc(1.4em + 2px + 1.5 * 12px); }
 
 /* Fine slider. The track spans exactly from the first to the last face centre:
    each face sits centred in a button of width (100% - 4 gaps) / 5. */
@@ -314,7 +316,8 @@ main { display: block; }
   transition: grid-template-rows .28s cubic-bezier(.2,.9,.3,1), opacity .2s;
 }
 .fine.open { grid-template-rows: 1fr; opacity: 1; }
-.fine-inner { min-height: 0; overflow: hidden; }
+/* Extra room inside the clip (cancelled by negative margins) so the thumb's glow and focus ring aren't cut. */
+.fine-inner { min-height: 0; overflow: hidden; padding: 0 28px 14px; margin: 0 -28px -14px; }
 .fine-track {
   position: relative;
   height: 46px;

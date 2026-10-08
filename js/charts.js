@@ -246,7 +246,7 @@ export function moodChart(container, { from, to }) {
       if (t != null) box.append(tipRow(keyLine('trend'), num1(t), '7-Tage-Schnitt'));
       for (const sl of store.SLOTS) {
         const e = entries[sl.id];
-        if (e) box.append(tipRow(keyDot(e.mood), store.formatMood(e.mood), `${sl.label} · ${store.moodLabel(e.mood)}`));
+        if (e) box.append(tipRow(keyDot(e.mood), store.formatMood(e.mood), `${sl.label} · ${store.describeMood(e.mood)}`));
       }
       const notes = store.SLOTS.map(sl => entries[sl.id]?.note).filter(Boolean);
       if (notes.length) box.append(h('div', { class: 'tip-note' }, notes.join(' · ')));

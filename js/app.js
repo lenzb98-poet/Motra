@@ -149,6 +149,7 @@ const form = { date: todayKey(), slot: store.currentSlot(), mood: null, note: ''
 function loadFormEntry() {
   const e = store.getEntry(form.date, form.slot);
   form.mood = e?.mood ?? null;
+  fine.hint = false;
   form.note = e?.note ?? '';
   form.dirty = false;
   $('#entry-note').value = form.note;
@@ -205,7 +206,7 @@ function renderHeute() {
   $('#mood-question').textContent = isNow ? 'Wie geht es dir gerade?' : `Wie ging es dir ${when}?`;
   $('#mood-group').replaceChildren(...store.MOODS.map(m => h('button', {
     type: 'button', class: 'mood', role: 'radio', dataset: { value: m.value },
-    onclick: () => { if (performance.now() > fine.suppressClickUntil) setMood(m.value); },
+    onclick: () => { if (performance.now() > fine.suppressClickUntil) { fine.hint = true; setMood(m.value); } },
   }, h('span', { class: 'mood-face' }, face(m.value)), m.label)));
   updateMoodUI();
   $('#btn-delete-entry').hidden = !existing;
@@ -253,7 +254,7 @@ function renderWeek() {
 
 /* ---------- mood value: faces + fine slider ---------- */
 
-const fine = { suppressClickUntil: 0, dragging: false };
+const fine = { suppressClickUntil: 0, dragging: false, hint: false };
 
 function setMood(v) {
   const next = store.roundMood(v);
@@ -276,7 +277,8 @@ function updateMoodUI() {
   }
 
   const wrap = $('#mood-fine');
-  const open = v != null;
+  // The slider only shows while dragging from a face, or when a value between two faces is set.
+  const open = v != null && (fine.dragging || !Number.isInteger(v));
   wrap.classList.toggle('open', open);
   wrap.inert = !open;
   if (open) {
@@ -296,11 +298,16 @@ function updateMoodUI() {
       ? `Eingetragen: ${Number.isInteger(v) ? '' : store.formatMood(v) + ' · '}${store.describeMood(v)}`
       : `${store.formatMood(v)} von 5 · ${store.describeMood(v)}`;
     caption.replaceChildren(text);
-    if (Number.isInteger(v) && form.dirty) caption.append(h('span', { class: 'hint' }, 'Für Zwischenwerte den Regler ziehen'));
+    // Only right after a face tap: that is when someone may not know the slider yet.
+    if (fine.hint && form.dirty) caption.append(h('span', { class: 'hint' }, 'Für Zwischenwerte: Gesicht gedrückt halten und zur Seite ziehen'));
   }
+  updateSaveButton();
+}
 
+function updateSaveButton() {
+  const existing = store.getEntry(form.date, form.slot);
   const save = $('#btn-save');
-  save.disabled = v == null || (existing && !form.dirty);
+  save.disabled = form.mood == null || (existing && !form.dirty);
   save.textContent = existing ? (form.dirty ? 'Änderung speichern' : 'Gespeichert') : `${store.slotLabel(form.slot)} speichern`;
 }
 
@@ -317,69 +324,71 @@ function initFineSlider() {
   const group = $('#mood-group');
   const wrap = $('#mood-fine');
   const slider = $('#mood-slider');
+  const thumb = $('#mood-thumb');
 
-  // Shared drag logic. A gesture only becomes a drag after a clear sideways move,
-  // so vertical scrolling and simple taps keep working.
-  function draggable(el, { startOnPress }) {
-    let start = null;
-    const begin = e => {
+  // A gesture only becomes a drag after a clearly sideways move, so scrolling and taps keep working.
+  // If the browser takes the gesture over for scrolling (pointercancel), the previous value comes back.
+  let g = null;
+
+  const finish = cancelled => {
+    if (!g) return;
+    if (g.active) {
+      if (cancelled) { form.mood = g.mood; form.dirty = g.dirty; fine.hint = g.hint; updateMoodUI(); }
+      else fine.suppressClickUntil = performance.now() + 400; // swallow the click that follows a drag
+    }
+    g = null;
+    fine.dragging = false;
+    wrap.classList.remove('dragging');
+    group.classList.remove('dragging');
+    updateMoodUI();
+    window.removeEventListener('pointerup', onUp, true);
+    window.removeEventListener('pointercancel', onCancel, true);
+  };
+  const onUp = e => { if (g && e.pointerId === g.id) finish(false); };
+  const onCancel = e => { if (g && e.pointerId === g.id) finish(true); };
+
+  const onDown = e => {
+    if (g || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const onThumb = !!e.target.closest?.('#mood-thumb');
+    g = {
+      el: e.currentTarget, id: e.pointerId, x: e.clientX, y: e.clientY,
+      mood: form.mood, dirty: form.dirty, hint: fine.hint, active: false,
+      // Grabbing the thumb off-centre must not make it jump to the finger.
+      offset: onThumb && form.mood != null ? form.mood - moodAtX(e.clientX) : 0,
+    };
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
+  };
+
+  const onMove = e => {
+    if (!g || e.pointerId !== g.id) return;
+    if (e.pointerType === 'mouse' && !e.buttons) return finish(false); // released outside the window
+    if (!g.active) {
+      const dx = Math.abs(e.clientX - g.x), dy = Math.abs(e.clientY - g.y);
+      if (dx < 10 || dx < 2 * dy) return;
+      g.active = true;
       fine.dragging = true;
-      el.setPointerCapture?.(e.pointerId);
+      fine.hint = false;
+      g.el.setPointerCapture?.(e.pointerId);
       wrap.classList.add('dragging');
       group.classList.add('dragging');
-    };
-    el.addEventListener('pointerdown', e => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      start = { x: e.clientX, y: e.clientY, id: e.pointerId };
-      if (startOnPress) { begin(e); setMood(moodAtX(e.clientX)); }
-    });
-    el.addEventListener('pointermove', e => {
-      if (!start || e.pointerId !== start.id) return;
-      if (!fine.dragging) {
-        const dx = Math.abs(e.clientX - start.x), dy = Math.abs(e.clientY - start.y);
-        if (dx < 8 || dx < dy) return;
-        begin(e);
-      }
-      e.preventDefault();
-      setMood(moodAtX(e.clientX));
-    });
-    const end = e => {
-      if (!start || e.pointerId !== start.id) return;
-      if (fine.dragging) {
-        // Swallow the click that follows a drag, so it doesn't snap back to a whole number.
-        // Touch browsers may deliver that click a little later, hence a short time window.
-        fine.suppressClickUntil = performance.now() + 400;
-      } else if (e.type === 'pointerup' && el === slider) {
-        setMood(moodAtX(e.clientX)); // tap on the rail jumps there
-      }
-      fine.dragging = false;
-      start = null;
-      wrap.classList.remove('dragging');
-      group.classList.remove('dragging');
-    };
-    el.addEventListener('pointerup', end);
-    el.addEventListener('pointercancel', end);
+      updateMoodUI();
+    }
+    e.preventDefault();
+    setMood(moodAtX(e.clientX) + g.offset);
+  };
+
+  for (const el of [group, slider]) {
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
   }
 
-  draggable(group, { startOnPress: false });
-  draggable(slider, { startOnPress: false });
-  $('#mood-thumb').addEventListener('pointerdown', e => {
-    // Grabbing the thumb itself starts dragging straight away.
-    e.stopPropagation();
-    fine.dragging = true;
-    slider.setPointerCapture?.(e.pointerId);
-    wrap.classList.add('dragging');
-    const move = ev => { ev.preventDefault(); setMood(moodAtX(ev.clientX)); };
-    const up = () => {
-      fine.dragging = false;
-      wrap.classList.remove('dragging');
-      slider.removeEventListener('pointermove', move);
-      slider.removeEventListener('pointerup', up);
-      slider.removeEventListener('pointercancel', up);
-    };
-    slider.addEventListener('pointermove', move);
-    slider.addEventListener('pointerup', up);
-    slider.addEventListener('pointercancel', up);
+  // Tapping the rail jumps there. Using click (not pointerup) means a touch that only stops
+  // a coasting scroll, or turns into a scroll, does nothing: browsers don't send a click then.
+  slider.addEventListener('click', e => {
+    if (performance.now() <= fine.suppressClickUntil || thumb.contains(e.target) || e.detail === 0) return;
+    fine.hint = false;
+    setMood(moodAtX(e.clientX));
   });
 
   slider.addEventListener('keydown', e => {
@@ -391,6 +400,7 @@ function initFineSlider() {
     else if (e.key === 'End') next = 5;
     else return;
     e.preventDefault();
+    fine.hint = false;
     setMood(next);
   });
 }
@@ -407,7 +417,7 @@ function initHeute() {
   $('#entry-note').addEventListener('input', e => {
     form.note = e.target.value;
     form.dirty = true;
-    updateMoodUI();
+    updateSaveButton();
   });
 
   initFineSlider();
