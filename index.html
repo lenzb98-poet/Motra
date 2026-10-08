@@ -52,6 +52,21 @@
           <fieldset class="mood-field">
             <legend class="question" id="mood-question">Wie geht es dir gerade?</legend>
             <div class="moods" id="mood-group" role="radiogroup" aria-labelledby="mood-question"></div>
+            <!-- Fine slider: unfolds under the faces once a mood is picked, or while swiping across them -->
+            <div class="fine" id="mood-fine" inert>
+              <div class="fine-inner">
+                <div class="fine-track" id="mood-slider" role="slider" tabindex="0"
+                     aria-label="Stimmung genau einstellen" aria-valuemin="1" aria-valuemax="5">
+                  <div class="fine-rail"></div>
+                  <span class="fine-tick" style="--i: 0"></span>
+                  <span class="fine-tick" style="--i: 1"></span>
+                  <span class="fine-tick" style="--i: 2"></span>
+                  <span class="fine-tick" style="--i: 3"></span>
+                  <span class="fine-tick" style="--i: 4"></span>
+                  <div class="fine-thumb" id="mood-thumb"><span id="mood-thumb-value"></span></div>
+                </div>
+              </div>
+            </div>
             <p class="mood-caption" id="mood-caption" aria-live="polite">Tippe auf ein Gesicht.</p>
           </fieldset>
 

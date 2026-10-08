@@ -182,9 +182,9 @@ function renderHeute() {
     const e = dayEntries[sl.id];
     return h('button', {
       type: 'button', class: 'slot', role: 'radio', 'aria-checked': String(sl.id === form.slot),
-      'aria-label': `${sl.label}${e ? ` – eingetragen: ${store.moodLabel(e.mood)}` : ' – noch offen'}`,
+      'aria-label': `${sl.label}${e ? ` – eingetragen: ${store.describeMood(e.mood)}` : ' – noch offen'}`,
       onclick: () => { form.slot = sl.id; form.touched = true; loadFormEntry(); renderHeute(); },
-    }, h('span', { class: `slot-dot${e ? ' filled' : ''}`, style: e ? { background: `var(--m${e.mood})` } : null }), sl.label);
+    }, h('span', { class: `slot-dot${e ? ' filled' : ''}`, style: e ? { background: store.moodColor(e.mood) } : null }), sl.label);
   }));
 
   // date
@@ -204,17 +204,10 @@ function renderHeute() {
     : `am ${formatDayMonth(form.date)} ${adverb}`;
   $('#mood-question').textContent = isNow ? 'Wie geht es dir gerade?' : `Wie ging es dir ${when}?`;
   $('#mood-group').replaceChildren(...store.MOODS.map(m => h('button', {
-    type: 'button', class: 'mood', role: 'radio', 'aria-checked': String(form.mood === m.value),
-    style: { '--mc': `var(--m${m.value})` },
-    onclick: () => { form.mood = m.value; form.dirty = true; renderHeute(); },
+    type: 'button', class: 'mood', role: 'radio', dataset: { value: m.value },
+    onclick: () => { if (performance.now() > fine.suppressClickUntil) setMood(m.value); },
   }, h('span', { class: 'mood-face' }, face(m.value)), m.label)));
-  $('#mood-caption').textContent = form.mood
-    ? (existing && !form.dirty ? `Eingetragen: ${store.moodLabel(form.mood)}` : `${form.mood} von 5 · ${store.moodLabel(form.mood)}`)
-    : 'Tippe auf ein Gesicht.';
-
-  const save = $('#btn-save');
-  save.disabled = !form.mood || (existing && !form.dirty);
-  save.textContent = existing ? (form.dirty ? 'Änderung speichern' : 'Gespeichert') : `${slotName} speichern`;
+  updateMoodUI();
   $('#btn-delete-entry').hidden = !existing;
   resetDeleteButton();
 
@@ -236,8 +229,8 @@ function renderWeek() {
       grid.push(h('button', {
         type: 'button',
         class: `week-cell${e ? ' filled' : ''}${selected ? ' selected' : ''}`,
-        style: e ? { background: `var(--m${e.mood})` } : null,
-        'aria-label': `${formatWeekday(d)} ${formatDayMonth(d)}, ${sl.label}: ${e ? store.moodLabel(e.mood) : 'kein Eintrag'}`,
+        style: e ? { background: store.moodColor(e.mood) } : null,
+        'aria-label': `${formatWeekday(d)} ${formatDayMonth(d)}, ${sl.label}: ${e ? store.describeMood(e.mood) : 'kein Eintrag'}`,
         onclick: () => { selectEntry(d, sl.id); window.scrollTo({ top: 0, behavior: 'smooth' }); },
       }));
     }
@@ -258,6 +251,150 @@ function renderWeek() {
   $('#week-legend').replaceChildren(...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)));
 }
 
+/* ---------- mood value: faces + fine slider ---------- */
+
+const fine = { suppressClickUntil: 0, dragging: false };
+
+function setMood(v) {
+  const next = store.roundMood(v);
+  if (form.mood != null && Math.floor(next) !== Math.floor(form.mood)) {
+    try { navigator.vibrate?.(6); } catch (e) { /* no haptics */ }
+  }
+  form.mood = next;
+  form.dirty = true;
+  updateMoodUI();
+}
+
+// Light update without rebuilding the buttons, so dragging stays smooth.
+function updateMoodUI() {
+  const v = form.mood;
+  const level = v == null ? null : store.moodLevel(v);
+  for (const btn of $('#mood-group').children) {
+    const value = Number(btn.dataset.value);
+    btn.setAttribute('aria-checked', String(value === level));
+    btn.style.setProperty('--mc', value === level ? store.moodColor(v) : `var(--m${value})`);
+  }
+
+  const wrap = $('#mood-fine');
+  const open = v != null;
+  wrap.classList.toggle('open', open);
+  wrap.inert = !open;
+  if (open) {
+    wrap.style.setProperty('--v', v);
+    wrap.style.setProperty('--tc', store.moodColor(v));
+    $('#mood-thumb-value').textContent = store.formatMood(v);
+    const slider = $('#mood-slider');
+    slider.setAttribute('aria-valuenow', v);
+    slider.setAttribute('aria-valuetext', `${store.formatMood(v)} von 5, ${store.describeMood(v)}`);
+  }
+
+  const existing = store.getEntry(form.date, form.slot);
+  const caption = $('#mood-caption');
+  if (v == null) caption.replaceChildren('Tippe auf ein Gesicht.');
+  else {
+    const text = existing && !form.dirty
+      ? `Eingetragen: ${Number.isInteger(v) ? '' : store.formatMood(v) + ' · '}${store.describeMood(v)}`
+      : `${store.formatMood(v)} von 5 · ${store.describeMood(v)}`;
+    caption.replaceChildren(text);
+    if (Number.isInteger(v) && form.dirty) caption.append(h('span', { class: 'hint' }, 'Für Zwischenwerte den Regler ziehen'));
+  }
+
+  const save = $('#btn-save');
+  save.disabled = v == null || (existing && !form.dirty);
+  save.textContent = existing ? (form.dirty ? 'Änderung speichern' : 'Gespeichert') : `${store.slotLabel(form.slot)} speichern`;
+}
+
+// Value under a screen x position, measured from the first to the last face centre.
+function moodAtX(clientX) {
+  const faces = $('#mood-group').querySelectorAll('.mood-face');
+  const a = faces[0].getBoundingClientRect();
+  const b = faces[faces.length - 1].getBoundingClientRect();
+  const x1 = a.left + a.width / 2, x5 = b.left + b.width / 2;
+  return 1 + ((clientX - x1) / (x5 - x1)) * 4;
+}
+
+function initFineSlider() {
+  const group = $('#mood-group');
+  const wrap = $('#mood-fine');
+  const slider = $('#mood-slider');
+
+  // Shared drag logic. A gesture only becomes a drag after a clear sideways move,
+  // so vertical scrolling and simple taps keep working.
+  function draggable(el, { startOnPress }) {
+    let start = null;
+    const begin = e => {
+      fine.dragging = true;
+      el.setPointerCapture?.(e.pointerId);
+      wrap.classList.add('dragging');
+      group.classList.add('dragging');
+    };
+    el.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      if (startOnPress) { begin(e); setMood(moodAtX(e.clientX)); }
+    });
+    el.addEventListener('pointermove', e => {
+      if (!start || e.pointerId !== start.id) return;
+      if (!fine.dragging) {
+        const dx = Math.abs(e.clientX - start.x), dy = Math.abs(e.clientY - start.y);
+        if (dx < 8 || dx < dy) return;
+        begin(e);
+      }
+      e.preventDefault();
+      setMood(moodAtX(e.clientX));
+    });
+    const end = e => {
+      if (!start || e.pointerId !== start.id) return;
+      if (fine.dragging) {
+        // Swallow the click that follows a drag, so it doesn't snap back to a whole number.
+        // Touch browsers may deliver that click a little later, hence a short time window.
+        fine.suppressClickUntil = performance.now() + 400;
+      } else if (e.type === 'pointerup' && el === slider) {
+        setMood(moodAtX(e.clientX)); // tap on the rail jumps there
+      }
+      fine.dragging = false;
+      start = null;
+      wrap.classList.remove('dragging');
+      group.classList.remove('dragging');
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  }
+
+  draggable(group, { startOnPress: false });
+  draggable(slider, { startOnPress: false });
+  $('#mood-thumb').addEventListener('pointerdown', e => {
+    // Grabbing the thumb itself starts dragging straight away.
+    e.stopPropagation();
+    fine.dragging = true;
+    slider.setPointerCapture?.(e.pointerId);
+    wrap.classList.add('dragging');
+    const move = ev => { ev.preventDefault(); setMood(moodAtX(ev.clientX)); };
+    const up = () => {
+      fine.dragging = false;
+      wrap.classList.remove('dragging');
+      slider.removeEventListener('pointermove', move);
+      slider.removeEventListener('pointerup', up);
+      slider.removeEventListener('pointercancel', up);
+    };
+    slider.addEventListener('pointermove', move);
+    slider.addEventListener('pointerup', up);
+    slider.addEventListener('pointercancel', up);
+  });
+
+  slider.addEventListener('keydown', e => {
+    if (form.mood == null) return;
+    const steps = { ArrowLeft: -0.1, ArrowDown: -0.1, ArrowRight: 0.1, ArrowUp: 0.1, PageDown: -1, PageUp: 1 };
+    let next;
+    if (e.key in steps) next = form.mood + steps[e.key];
+    else if (e.key === 'Home') next = 1;
+    else if (e.key === 'End') next = 5;
+    else return;
+    e.preventDefault();
+    setMood(next);
+  });
+}
+
 let deleteArmTimer;
 function resetDeleteButton() {
   const btn = $('#btn-delete-entry');
@@ -270,11 +407,10 @@ function initHeute() {
   $('#entry-note').addEventListener('input', e => {
     form.note = e.target.value;
     form.dirty = true;
-    const existing = store.getEntry(form.date, form.slot);
-    const save = $('#btn-save');
-    save.disabled = !form.mood;
-    if (existing) save.textContent = 'Änderung speichern';
+    updateMoodUI();
   });
+
+  initFineSlider();
 
   const dateInput = $('#entry-date');
   dateInput.addEventListener('click', () => openDatePicker(dateInput));
@@ -372,9 +508,11 @@ function renderEntryList() {
           type: 'button', class: 'entry-row',
           onclick: () => { selectEntry(date, sl.id); location.hash = '#heute'; },
         },
-        h('span', { class: 'entry-face', style: { background: `var(--m${e.mood})` } }, face(e.mood)),
+        h('span', { class: 'entry-face', style: { background: store.moodColor(e.mood) } }, face(store.moodLevel(e.mood))),
         h('span', { class: 'entry-main' },
-          h('span', { class: 'entry-title' }, store.moodLabel(e.mood), h('span', null, ` · ${sl.label}`)),
+          h('span', { class: 'entry-title' },
+            Number.isInteger(e.mood) ? store.moodLabel(e.mood) : `${store.formatMood(e.mood)} · ${store.describeMood(e.mood)}`,
+            h('span', null, ` · ${sl.label}`)),
           e.note ? h('p', { class: 'entry-note' }, e.note) : null));
       }));
   }));

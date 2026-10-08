@@ -269,7 +269,7 @@ main { display: block; }
   font-size: 21px;
   line-height: 1.2;
 }
-.moods { display: flex; justify-content: space-between; gap: 6px; }
+.moods { --mood-gap: 6px; display: flex; justify-content: space-between; gap: var(--mood-gap); touch-action: pan-y; }
 .mood {
   flex: 1 1 0;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -302,6 +302,70 @@ main { display: block; }
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--mc) 22%, transparent), 0 8px 26px -6px color-mix(in srgb, var(--mc) 60%, transparent);
 }
 .mood-caption { margin: 12px 0 0; min-height: 1.4em; text-align: center; font-size: 13px; color: var(--muted); }
+.mood-caption .hint { display: block; margin-top: 2px; font-size: 12px; color: #6f6a82; }
+
+/* Fine slider. The track spans exactly from the first to the last face centre:
+   each face sits centred in a button of width (100% - 4 gaps) / 5. */
+.fine {
+  --mood-gap: 6px;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows .28s cubic-bezier(.2,.9,.3,1), opacity .2s;
+}
+.fine.open { grid-template-rows: 1fr; opacity: 1; }
+.fine-inner { min-height: 0; overflow: hidden; }
+.fine-track {
+  position: relative;
+  height: 46px;
+  margin: 6px calc((100% - 4 * var(--mood-gap)) / 10) 0;
+  touch-action: pan-y;
+  cursor: pointer;
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.fine-rail {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--m1), var(--m2) 25%, var(--m3) 50%, var(--m4) 75%, var(--m5));
+  opacity: .5;
+}
+.fine-tick {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--i) * 25%);
+  width: 6px; height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  box-shadow: 0 0 0 2px var(--ink-1);
+}
+.fine-thumb {
+  position: absolute;
+  top: 50%;
+  left: calc((var(--v, 3) - 1) * 25%);
+  min-width: 46px;
+  height: 30px;
+  padding: 0 10px;
+  transform: translate(-50%, -50%);
+  border-radius: 15px;
+  background: var(--tc, var(--m3));
+  color: var(--on-accent);
+  display: grid; place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 3px var(--ink-1), 0 6px 18px -6px var(--tc, var(--m3));
+  transition: left .18s cubic-bezier(.2,.9,.3,1), background-color .18s, transform .12s;
+  cursor: grab;
+}
+.fine.dragging .fine-thumb { transition: none; transform: translate(-50%, -50%) scale(1.08); cursor: grabbing; }
+.fine-track:focus-visible .fine-thumb { box-shadow: 0 0 0 3px var(--ink-1), 0 0 0 5px var(--accent); }
+.moods.dragging .mood-face { transition: background-color .1s, box-shadow .1s; }
 
 .note-label { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: -6px; }
 .optional { font-weight: 400; color: var(--muted); margin-left: 4px; }

@@ -173,7 +173,7 @@ function tipRow(key, value, label) {
 }
 
 const keyLine = cls => h('span', { class: `key-line ${cls}` });
-const keyDot = v => h('span', { class: 'key-dot', style: { background: `var(--m${v})` } });
+const keyDot = v => h('span', { class: 'key-dot', style: { background: store.moodColor(v) } });
 
 function emptyState(container, text) {
   container.replaceChildren(h('div', { class: 'chart-empty' }, text));
@@ -204,7 +204,7 @@ export function moodChart(container, { from, to }) {
   for (const e of store.getState().entries) {
     if (e.date < from || e.date > to) continue;
     const off = store.SLOTS.find(sl => sl.id === e.slot).offset;
-    dots.append(s('circle', { cx: x(e.date, off), cy: y(e.mood), r: dense ? 2.2 : total > 45 ? 2.8 : 4, style: `fill:var(--m${e.mood})`, class: 'entry-dot' }));
+    dots.append(s('circle', { cx: x(e.date, off), cy: y(e.mood), r: dense ? 2.2 : total > 45 ? 2.8 : 4, style: `fill:${store.moodColor(e.mood)}`, class: 'entry-dot' }));
   }
   svg.append(dots);
 
@@ -246,7 +246,7 @@ export function moodChart(container, { from, to }) {
       if (t != null) box.append(tipRow(keyLine('trend'), num1(t), '7-Tage-Schnitt'));
       for (const sl of store.SLOTS) {
         const e = entries[sl.id];
-        if (e) box.append(tipRow(keyDot(e.mood), e.mood, `${sl.label} · ${store.moodLabel(e.mood)}`));
+        if (e) box.append(tipRow(keyDot(e.mood), store.formatMood(e.mood), `${sl.label} · ${store.moodLabel(e.mood)}`));
       }
       const notes = store.SLOTS.map(sl => entries[sl.id]?.note).filter(Boolean);
       if (notes.length) box.append(h('div', { class: 'tip-note' }, notes.join(' · ')));

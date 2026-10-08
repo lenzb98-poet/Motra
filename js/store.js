@@ -20,7 +20,19 @@ export const MOODS = [
   { value: 4, label: 'Gut' },
   { value: 5, label: 'Sehr gut' },
 ];
-export const moodLabel = v => MOODS.find(m => m.value === v)?.label ?? '';
+// Moods are 1–5. Faces give whole numbers; the fine slider gives steps of 0.1.
+export const roundMood = v => Math.round(Math.min(5, Math.max(1, v)) * 10) / 10;
+export const moodLevel = v => Math.min(5, Math.max(1, Math.round(v)));
+export const moodLabel = v => MOODS.find(m => m.value === moodLevel(v))?.label ?? '';
+export const formatMood = v => (Number.isInteger(v) ? String(v) : v.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+export const describeMood = v => (Number.isInteger(v) ? moodLabel(v) : `zwischen ${moodLabel(Math.floor(v))} und ${moodLabel(Math.ceil(v))}`);
+
+// CSS color for a mood; values between two levels blend their colors.
+export function moodColor(v) {
+  const lo = Math.floor(v), hi = Math.ceil(v);
+  if (lo === hi) return `var(--m${lo})`;
+  return `color-mix(in oklab, var(--m${lo}) ${Math.round((hi - v) * 100)}%, var(--m${hi}))`;
+}
 export const MED_COLORS = 8;
 
 // Which slot fits the current time of day.
@@ -93,13 +105,13 @@ export function normalize(data) {
   for (const e of data.entries) {
     if (!e || !DATE_RE.test(e.date) || !SLOT_IDS.includes(e.slot)) continue;
     const mood = Number(e.mood);
-    if (!Number.isInteger(mood) || mood < 1 || mood > 5) continue;
+    if (!Number.isFinite(mood) || mood < 1 || mood > 5) continue;
     const k = e.date + '|' + e.slot;
     if (seen.has(k)) continue;
     seen.add(k);
     entries.push({
       id: typeof e.id === 'string' ? e.id : uid(),
-      date: e.date, slot: e.slot, mood,
+      date: e.date, slot: e.slot, mood: roundMood(mood),
       note: typeof e.note === 'string' ? e.note.slice(0, 1000) : '',
       updatedAt: typeof e.updatedAt === 'string' ? e.updatedAt : new Date().toISOString(),
       ...(e.demo ? { demo: true } : {}),
@@ -135,6 +147,7 @@ export function normalize(data) {
 export const getEntry = (date, slot) => state.entries.find(e => e.date === date && e.slot === slot) ?? null;
 
 export function saveEntry({ date, slot, mood, note }) {
+  mood = roundMood(mood);
   const existing = getEntry(date, slot);
   const updatedAt = new Date().toISOString();
   if (existing) {
@@ -360,7 +373,7 @@ export function exportCSV() {
       .filter(([, p]) => p)
       .map(([m, p]) => (p.dose ? `${m.name} ${p.dose}` : m.name))
       .join(', ');
-    rows.push([e.date, formatWeekday(e.date), slotLabel(e.slot), e.mood, moodLabel(e.mood), e.note, meds]);
+    rows.push([e.date, formatWeekday(e.date), slotLabel(e.slot), formatMood(e.mood), describeMood(e.mood), e.note, meds]);
   }
   return '﻿' + rows.map(r => r.map(esc).join(';')).join('\r\n');
 }
