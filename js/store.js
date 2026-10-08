@@ -1,7 +1,8 @@
 // Data model, persistence (localStorage) and analysis.
 import { todayKey, addDays, diffDays, mean, uid, minKey, maxKey, formatWeekday } from './util.js';
 
-const KEY = 'sutra.v1';
+const KEY = 'motra.v1';
+const LEGACY_KEY = 'sutra.v1'; // storage key from before the app was renamed to Motra
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const SLOTS = [
@@ -41,7 +42,16 @@ const listeners = new Set();
 
 export function init() {
   try {
-    const raw = localStorage.getItem(KEY);
+    let raw = localStorage.getItem(KEY);
+    if (raw == null) {
+      // Carry data over from the old name. The legacy copy is only removed once the new one is written.
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy != null) {
+        localStorage.setItem(KEY, legacy);
+        localStorage.removeItem(LEGACY_KEY);
+        raw = legacy;
+      }
+    }
     state = raw ? normalize(JSON.parse(raw)) : blank();
   } catch (e) {
     storageAvailable = false;
@@ -76,7 +86,7 @@ export async function requestPersistence() {
 // Validates and cleans data coming from storage or an imported backup.
 export function normalize(data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.entries) || !Array.isArray(data.meds)) {
-    throw new Error('Das ist keine Sutra-Sicherung.');
+    throw new Error('Das ist keine Motra-Sicherung.');
   }
   const seen = new Set();
   const entries = [];
@@ -320,7 +330,7 @@ export function medComparison(med, from, to) {
 /* ---------------- backup ---------------- */
 
 export function exportJSON() {
-  return JSON.stringify({ ...state, app: 'Sutra', exportedAt: new Date().toISOString() }, null, 2);
+  return JSON.stringify({ ...state, app: 'Motra', exportedAt: new Date().toISOString() }, null, 2);
 }
 
 export function markBackup() {
@@ -330,7 +340,7 @@ export function markBackup() {
 
 export function importJSON(text) {
   let parsed;
-  try { parsed = JSON.parse(text); } catch (e) { throw new Error('Die Datei konnte nicht gelesen werden. Ist es eine Sutra-Sicherung (.json)?'); }
+  try { parsed = JSON.parse(text); } catch (e) { throw new Error('Die Datei konnte nicht gelesen werden. Ist es eine Motra-Sicherung (.json)?'); }
   const next = normalize(parsed);
   next.settings.lastBackup = new Date().toISOString();
   state = next;
@@ -356,6 +366,7 @@ export function exportCSV() {
 }
 
 export function wipeAll() {
+  try { localStorage.removeItem(LEGACY_KEY); } catch (e) { /* ignore */ }
   state = blank();
   commit();
 }

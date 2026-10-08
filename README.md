@@ -1,4 +1,4 @@
-# Sutra
+# Motra
 
 Ein persönliches Stimmungstagebuch als Web-App. Du trägst dreimal am Tag deine Stimmung ein (Morgen, Mittag, Abend), siehst den Verlauf als Grafik und kannst ihn neben deine Medikamente legen.
 
@@ -49,6 +49,6 @@ Nach Änderungen an den Dateien die Versionsnummer `CACHE` in `sw.js` erhöhen, 
 
 ## Wichtig
 
-Sutra zeigt, wie Stimmung und Einnahme zeitlich zusammenfallen. Die App zeigt keine Ursachen und ersetzt keine ärztliche Beratung. Ändere Medikamente nur nach Rücksprache mit deiner Ärztin oder deinem Arzt.
+Motra zeigt, wie Stimmung und Einnahme zeitlich zusammenfallen. Die App zeigt keine Ursachen und ersetzt keine ärztliche Beratung. Ändere Medikamente nur nach Rücksprache mit deiner Ärztin oder deinem Arzt.
 
 Die Schrift *Bricolage Grotesque* steht unter der SIL Open Font License (`fonts/OFL.txt`).

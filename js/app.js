@@ -9,9 +9,17 @@ const $ = sel => document.querySelector(sel);
 
 /* ---------------- preferences (per device conveniences) ---------------- */
 
-const PREFS_KEY = 'sutra.prefs';
+const PREFS_KEY = 'motra.prefs';
+const LEGACY_PREFS_KEY = 'sutra.prefs';
 let prefs = { rangeVerlauf: '30', rangeMedis: '90' };
-try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch (e) { /* ignore */ }
+try {
+  let saved = localStorage.getItem(PREFS_KEY);
+  if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
+    localStorage.setItem(PREFS_KEY, saved);
+    localStorage.removeItem(LEGACY_PREFS_KEY);
+  }
+  prefs = { ...prefs, ...JSON.parse(saved || '{}') };
+} catch (e) { /* ignore */ }
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
 
 const RANGES = [
@@ -637,7 +645,7 @@ function settingsSheet() {
       h('h3', null, 'Sichern'),
       h('p', { class: 'sheet-text' }, 'Wenn Browserdaten gelöscht werden, sind auch deine Einträge weg. Lade ab und zu eine Sicherung herunter, zum Beispiel in iCloud oder Dateien.'),
       h('button', { type: 'button', class: 'btn', onclick: async () => {
-        const ok = await deliverFile(`sutra-sicherung-${stamp}.json`, store.exportJSON(), 'application/json');
+        const ok = await deliverFile(`motra-sicherung-${stamp}.json`, store.exportJSON(), 'application/json');
         if (ok) { store.markBackup(); toast('Sicherung erstellt'); settingsSheet(); }
       } }, 'Sicherung herunterladen'),
       h('button', { type: 'button', class: 'btn', onclick: () => fileInput.click() }, 'Sicherung wiederherstellen'),
@@ -647,7 +655,7 @@ function settingsSheet() {
       h('h3', null, 'Für den Arzttermin'),
       h('p', { class: 'sheet-text' }, 'Eine Tabelle mit allen Einträgen und den Medikamenten des jeweiligen Tages. Sie öffnet sich in Excel, Numbers oder Google Tabellen.'),
       h('button', { type: 'button', class: 'btn', onclick: async () => {
-        if (await deliverFile(`sutra-tabelle-${stamp}.csv`, store.exportCSV(), 'text/csv')) toast('Tabelle erstellt');
+        if (await deliverFile(`motra-tabelle-${stamp}.csv`, store.exportCSV(), 'text/csv')) toast('Tabelle erstellt');
       } }, 'Als Tabelle exportieren (CSV)')),
 
     h('section', { class: 'sheet-section' },
@@ -657,7 +665,7 @@ function settingsSheet() {
         : h('ul', { class: 'howto' },
           h('li', null, 'iPhone: in Safari auf Teilen tippen, dann „Zum Home-Bildschirm“.'),
           h('li', null, 'Android: im Chrome-Menü „App installieren“ wählen.')),
-      h('p', { class: 'sheet-text' }, 'Als App vom Home-Bildschirm startet Sutra schneller, funktioniert offline und der Browser behält deine Daten zuverlässiger.')),
+      h('p', { class: 'sheet-text' }, 'Als App vom Home-Bildschirm startet Motra schneller, funktioniert offline und der Browser behält deine Daten zuverlässiger.')),
 
     h('section', { class: 'sheet-section' },
       h('h3', null, 'Ausprobieren'),
@@ -676,7 +684,7 @@ function confirmImport(text) {
   let preview;
   try { preview = store.normalize(JSON.parse(text)); } catch (e) {
     openSheet('Sicherung wiederherstellen',
-      h('p', { class: 'form-error' }, 'Die Datei konnte nicht gelesen werden. Wähle eine Sicherung, die du in Sutra heruntergeladen hast (.json).'),
+      h('p', { class: 'form-error' }, 'Die Datei konnte nicht gelesen werden. Wähle eine Sicherung, die du in Motra oder früher in Sutra heruntergeladen hast (.json).'),
       h('div', { class: 'sheet-actions' }, h('button', { type: 'button', class: 'btn', onclick: settingsSheet }, 'Zurück')));
     return;
   }
