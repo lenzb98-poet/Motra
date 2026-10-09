@@ -1,5 +1,5 @@
 // Offline support: serve the app from cache, refresh the cache in the background.
-const CACHE = 'motra-v6';
+const CACHE = 'motra-v7';
 const ASSETS = [
   './',
   'index.html',
@@ -9,6 +9,8 @@ const ASSETS = [
   'js/store.js',
   'js/charts.js',
   'js/util.js',
+  'js/sync.js',
+  'js/vendor/qrcode.js',
   'fonts/bricolage-grotesque.woff2',
   'icons/icon.svg',
   'icons/icon-192.png',
@@ -30,7 +32,9 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  // Sync API answers must always come fresh from the server.
+  if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   const key = req.mode === 'navigate' ? 'index.html' : req;
   event.respondWith(
     caches.open(CACHE).then(async cache => {

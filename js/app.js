@@ -1,4 +1,5 @@
 import * as store from './store.js';
+import * as sync from './sync.js';
 import { moodChart, moodLegend, medChart, medLegend, eventText } from './charts.js';
 import {
   h, s, icon, todayKey, addDays, diffDays, formatLong, formatDayMonth, formatShort, formatWeekday,
@@ -783,11 +784,15 @@ function settingsSheet() {
 
   const stamp = todayKey();
   openSheet('Deine Daten',
-    h('p', { class: 'sheet-text' }, 'Alles, was du einträgst, bleibt nur in diesem Browser auf diesem Gerät. Es wird nichts an einen Server geschickt.'),
+    h('p', { class: 'sheet-text' }, sync.isEnabled()
+      ? 'Deine Einträge liegen auf diesem Gerät und werden mit deinem Konto abgeglichen. Auf dem Server sind sie verschlüsselt gespeichert.'
+      : 'Alles, was du einträgst, bleibt nur in diesem Browser auf diesem Gerät. Es wird nichts an einen Server geschickt.'),
     h('dl', { class: 'info-list' },
       h('dt', null, 'Einträge'), h('dd', null, String(st.entries.length)),
       h('dt', null, 'Medikamente'), h('dd', null, String(st.meds.length)),
       h('dt', null, 'Letzte Sicherung'), h('dd', null, last ? formatShort(last.slice(0, 10)) : 'noch nie')),
+
+    syncSection(),
 
     h('section', { class: 'sheet-section' },
       h('h3', null, 'Sichern'),
@@ -824,7 +829,13 @@ function settingsSheet() {
 
     h('section', { class: 'sheet-section' },
       h('h3', null, 'Alles löschen'),
-      armedButton('Alle Daten löschen', 'Wirklich alles löschen? Nochmal tippen', () => { store.wipeAll(); closeSheet(); toast('Alle Daten gelöscht'); }, 'btn danger')),
+      sync.isEnabled()
+        ? h('p', { class: 'sheet-text' }, 'Löscht die Daten auf diesem Gerät und beendet hier die Synchronisierung. Auf dem Server und deinen anderen Geräten bleiben sie erhalten.')
+        : null,
+      armedButton('Alle Daten löschen', 'Wirklich alles löschen? Nochmal tippen', async () => {
+        if (sync.isEnabled()) await sync.disable();
+        store.wipeAll(); closeSheet(); toast('Alle Daten gelöscht');
+      }, 'btn danger')),
   );
 }
 
@@ -859,6 +870,272 @@ $('#btn-settings').addEventListener('click', settingsSheet);
 $('#btn-add-med').addEventListener('click', addMedSheet);
 $('#btn-more-entries').addEventListener('click', () => { listDays += 14; renderEntryList(); });
 
+/* ---------------- sync settings & login ---------------- */
+
+function relativeTime(iso) {
+  if (!iso) return 'noch nie';
+  const min = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (min < 1) return 'gerade eben';
+  if (min < 60) return `vor ${min} Min.`;
+  if (min < 24 * 60) return `vor ${Math.round(min / 60)} Std.`;
+  return formatShort(iso.slice(0, 10));
+}
+
+const SYNC_STATUS = {
+  idle: 'Aktiv',
+  syncing: 'Gleicht ab …',
+  offline: 'Offline, gleicht ab, sobald Internet da ist',
+  error: 'Fehler beim Abgleich, versucht es später erneut',
+  loggedout: 'Abgemeldet, bitte neu anmelden',
+};
+
+// The "Synchronisierung" part of the settings sheet. Fills in once the server answered.
+function syncSection() {
+  const box = h('section', { class: 'sheet-section', id: 'sync-section' }, h('h3', null, 'Synchronisierung'));
+  const info = sync.info();
+  if (info.enabled) {
+    const statusEl = h('dd', { id: 'sync-status' }, SYNC_STATUS[info.status] ?? '');
+    const lastEl = h('dd', { id: 'sync-last' }, relativeTime(info.lastSync));
+    box.append(
+      h('dl', { class: 'info-list' },
+        h('dt', null, 'Konto'), h('dd', null, info.email),
+        h('dt', null, 'Status'), statusEl,
+        h('dt', null, 'Zuletzt abgeglichen'), lastEl),
+      info.status === 'loggedout'
+        ? h('button', { type: 'button', class: 'btn', onclick: () => syncLoginSheet(info.email) }, 'Erneut anmelden')
+        : h('button', { type: 'button', class: 'btn', onclick: async () => { await sync.syncNow(); if (sync.info().status === 'idle') toast('Abgeglichen'); } }, 'Jetzt abgleichen'),
+      armedButton('Auf diesem Gerät abmelden', 'Wirklich abmelden? Nochmal tippen', async () => {
+        await sync.disable();
+        toast('Abgemeldet. Deine Daten bleiben auf diesem Gerät.');
+        settingsSheet();
+      }, 'btn ghost danger'),
+    );
+    return box;
+  }
+  const text = h('p', { class: 'sheet-text' }, 'Prüfe die Verbindung …');
+  box.append(text);
+  sync.serverStatus().then(s => {
+    if (s.configured) {
+      text.textContent = 'Gleiche deine Einträge zwischen deinen Geräten ab, zum Beispiel iPhone und iPad. Anmeldung mit Passwort und Code aus einer Authenticator-App.';
+      box.append(h('button', { type: 'button', class: 'btn', onclick: () => syncLoginSheet() }, 'Synchronisierung einrichten'));
+    } else if (s.configured === false) {
+      text.textContent = 'Der Sync-Server ist noch nicht fertig eingerichtet (es fehlen Einstellungen in Cloudflare).';
+    } else if (s.offline) {
+      text.textContent = 'Keine Verbindung. Zum Einrichten der Synchronisierung brauchst du Internet.';
+    } else {
+      text.textContent = 'An dieser Adresse gibt es keinen Sync-Server. Öffne Motra über deine Cloudflare-Adresse, um die Synchronisierung zu nutzen.';
+    }
+  });
+  return box;
+}
+
+const AUTH_ERRORS = {
+  credentials: 'E-Mail oder Passwort stimmt nicht.',
+  setup_code: 'Der Einrichtungscode stimmt nicht.',
+  code: 'Der Code stimmt nicht. Nimm den aktuellen Code aus der App und prüfe, ob die Uhrzeit deines Geräts stimmt.',
+  exists: 'Für diese Adresse gibt es schon ein Passwort. Melde dich damit an.',
+  invalid: 'Diese E-Mail-Adresse ist nicht freigeschaltet.',
+  session: 'Die Anmeldung ist abgelaufen. Bitte fang noch einmal an.',
+  stage: 'Die Anmeldung ist abgelaufen. Bitte fang noch einmal an.',
+  offline: 'Keine Verbindung zum Server. Prüfe dein Internet.',
+  not_configured: 'Der Sync-Server ist noch nicht fertig eingerichtet.',
+};
+function authError(e) {
+  if (e?.body?.error === 'locked') {
+    const min = Math.max(1, Math.ceil((e.body.retryAfter || 60) / 60));
+    return `Zu viele Versuche. Bitte warte ${min} ${min === 1 ? 'Minute' : 'Minuten'}.`;
+  }
+  return AUTH_ERRORS[e?.body?.error] ?? 'Das hat nicht geklappt. Bitte versuche es noch einmal.';
+}
+
+// A small form inside the sheet with one primary button, a busy state and an error line.
+function authForm({ fields, submitLabel, onSubmit, extra = [] }) {
+  const err = h('p', { class: 'form-error', hidden: true, role: 'alert' });
+  const btn = h('button', { type: 'submit', class: 'btn primary' }, submitLabel);
+  const f = h('form', { class: 'sheet-body', onsubmit: async e => {
+    e.preventDefault();
+    err.hidden = true;
+    btn.disabled = true;
+    btn.textContent = 'Einen Moment …';
+    try {
+      await onSubmit(msg => { err.textContent = msg; err.hidden = false; });
+    } catch (ex) {
+      err.textContent = authError(ex);
+      err.hidden = false;
+    } finally {
+      if (btn.isConnected) { btn.disabled = false; btn.textContent = submitLabel; }
+    }
+  } }, ...fields, ...extra, err, h('div', { class: 'sheet-actions' }, btn));
+  return f;
+}
+
+function syncLoginSheet(prefillEmail = '') {
+  const title = 'Synchronisierung einrichten';
+  let email = prefillEmail;
+
+  const stepEmail = () => {
+    const input = h('input', { id: 'sync-email', type: 'email', value: email, autocomplete: 'username', inputmode: 'email', autocapitalize: 'off', required: true });
+    openSheet(title, authForm({
+      fields: [h('p', { class: 'sheet-text' }, 'Melde dich mit deiner E-Mail-Adresse an. Beim ersten Mal legst du dein Passwort fest.'), field('E-Mail', input)],
+      submitLabel: 'Weiter',
+      onSubmit: async () => {
+        email = input.value.trim().toLowerCase();
+        const res = await sync.api('POST', 'start', { email });
+        if (res.status === 'new') stepRegister(); else stepPassword();
+      },
+    }));
+    setTimeout(() => input.focus(), 50);
+  };
+
+  const stepPassword = () => {
+    const pw = h('input', { id: 'sync-password', type: 'password', autocomplete: 'current-password', required: true });
+    openSheet(title, authForm({
+      fields: [hiddenUser(), h('p', { class: 'sheet-text' }, email), field('Passwort', pw)],
+      submitLabel: 'Anmelden',
+      onSubmit: async () => {
+        const res = await sync.api('POST', 'login', { email, key: await sync.loginKey(email, pw.value) });
+        if (res.next === 'totp') stepTotpVerify(); else stepTotpSetup();
+      },
+      extra: [h('button', { type: 'button', class: 'btn ghost small', onclick: stepEmail }, 'Andere E-Mail-Adresse')],
+    }));
+    setTimeout(() => pw.focus(), 50);
+  };
+
+  const stepRegister = () => {
+    const pw = h('input', { id: 'sync-new-password', type: 'password', autocomplete: 'new-password', minlength: 10, required: true });
+    const pw2 = h('input', { id: 'sync-new-password2', type: 'password', autocomplete: 'new-password', required: true });
+    const code = h('input', { id: 'sync-setup-code', type: 'text', autocomplete: 'off', autocapitalize: 'off', required: true });
+    openSheet('Passwort festlegen', authForm({
+      fields: [
+        hiddenUser(),
+        h('p', { class: 'sheet-text' }, `Du richtest das Konto ${email} ein. Wähle ein Passwort mit mindestens 10 Zeichen.`),
+        field('Neues Passwort', pw),
+        field('Passwort wiederholen', pw2),
+        field('Einrichtungscode', code),
+        h('p', { class: 'sheet-text' }, 'Den Einrichtungscode hast du in Cloudflare als SETUP_CODE festgelegt. Er wird nur dieses eine Mal gebraucht.'),
+      ],
+      submitLabel: 'Passwort speichern',
+      onSubmit: async showError => {
+        if (pw.value.length < 10) return showError('Das Passwort braucht mindestens 10 Zeichen.');
+        if (pw.value !== pw2.value) return showError('Die beiden Passwörter sind nicht gleich.');
+        try {
+          await sync.api('POST', 'register', { email, key: await sync.loginKey(email, pw.value), setupCode: code.value.trim() });
+        } catch (e) {
+          if (e.body?.error === 'exists') return stepPassword();
+          throw e;
+        }
+        stepTotpSetup();
+      },
+    }));
+    setTimeout(() => pw.focus(), 50);
+  };
+
+  const stepTotpSetup = async () => {
+    openSheet('Zwei-Faktor einrichten', h('p', { class: 'sheet-text' }, 'Einen Moment …'));
+    let setup;
+    try {
+      setup = await sync.api('POST', '2fa/setup');
+    } catch (e) {
+      openSheet('Zwei-Faktor einrichten', h('p', { class: 'form-error' }, authError(e)),
+        h('div', { class: 'sheet-actions' }, h('button', { type: 'button', class: 'btn', onclick: stepEmail }, 'Neu beginnen')));
+      return;
+    }
+    const code = codeInput('sync-totp-setup');
+    const keyText = setup.secret.replace(/(.{4})/g, '$1 ').trim();
+    const qrBox = h('div', { class: 'qr-box' });
+    renderQr(qrBox, setup.uri);
+    openSheet('Zwei-Faktor einrichten', authForm({
+      fields: [
+        h('p', { class: 'sheet-text' }, 'Füge Motra in deiner Authenticator-App hinzu, zum Beispiel Apple Passwörter, Google Authenticator oder Authy.'),
+        h('a', { class: 'btn', href: setup.uri }, 'In Authenticator-App öffnen'),
+        h('p', { class: 'sheet-text' }, 'Oder scanne den Code mit einem anderen Gerät:'),
+        qrBox,
+        h('div', { class: 'secret-row' },
+          h('code', { class: 'secret' }, keyText),
+          h('button', { type: 'button', class: 'btn small', onclick: () => copyText(setup.secret, 'Schlüssel kopiert') }, 'Kopieren')),
+        field('6-stelliger Code aus der App', code),
+      ],
+      submitLabel: 'Bestätigen',
+      onSubmit: async () => {
+        const res = await sync.api('POST', '2fa/confirm', { code: code.value });
+        stepRecovery(res.recoveryCodes || []);
+      },
+    }));
+  };
+
+  const stepRecovery = codes => {
+    const text = codes.join('\n');
+    openSheet('Wiederherstellungscodes',
+      h('p', { class: 'sheet-text' }, 'Falls du dein Handy mit der Authenticator-App verlierst, kannst du dich mit einem dieser Codes anmelden. Jeder Code funktioniert einmal. Speichere sie zum Beispiel in deinem Passwortmanager.'),
+      h('ul', { class: 'recovery' }, ...codes.map(c => h('li', null, h('code', null, c)))),
+      h('div', { class: 'sheet-actions' },
+        h('button', { type: 'button', class: 'btn', onclick: () => copyText(text, 'Codes kopiert') }, 'Codes kopieren'),
+        h('button', { type: 'button', class: 'btn primary', onclick: finish }, 'Ich habe sie gesichert')));
+  };
+
+  const stepTotpVerify = () => {
+    const code = h('input', { id: 'sync-totp', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', required: true, maxlength: 12 });
+    openSheet('Code eingeben', authForm({
+      fields: [
+        h('p', { class: 'sheet-text' }, 'Gib den 6-stelligen Code aus deiner Authenticator-App ein. Hast du keinen Zugriff darauf, geht auch ein Wiederherstellungscode.'),
+        field('Code', code),
+      ],
+      submitLabel: 'Anmelden',
+      onSubmit: async () => {
+        await sync.api('POST', '2fa/verify', { code: code.value.trim() });
+        finish();
+      },
+    }));
+    setTimeout(() => code.focus(), 50);
+  };
+
+  const finish = async () => {
+    openSheet(title, h('p', { class: 'sheet-text' }, 'Angemeldet. Deine Daten werden abgeglichen …'));
+    await sync.enable(email);
+    const s = sync.info();
+    if (s.status === 'idle') toast('Synchronisierung ist aktiv');
+    settingsSheet();
+  };
+
+  // Lets password managers save the e-mail address together with the password.
+  const hiddenUser = () => h('input', { type: 'email', name: 'username', autocomplete: 'username', value: email, hidden: true, readonly: true, tabindex: '-1' });
+
+  stepEmail();
+}
+
+function codeInput(id) {
+  return h('input', { id, type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', pattern: '[0-9 ]*', maxlength: 7, required: true });
+}
+
+async function copyText(text, done) {
+  try { await navigator.clipboard.writeText(text); toast(done); } catch (e) { toast('Kopieren nicht möglich. Bitte markiere den Text.'); }
+}
+
+let qrLoading = null;
+function renderQr(box, text) {
+  qrLoading ??= new Promise((resolve, reject) => {
+    if (window.qrcode) return resolve();
+    const tag = document.createElement('script');
+    tag.src = 'js/vendor/qrcode.js';
+    tag.onload = resolve;
+    tag.onerror = () => { qrLoading = null; reject(); };
+    document.head.append(tag);
+  });
+  qrLoading.then(() => {
+    const qr = window.qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    const n = qr.getModuleCount();
+    const pad = 4;
+    const svg = s('svg', { viewBox: `0 0 ${n + pad * 2} ${n + pad * 2}`, role: 'img', 'aria-label': 'QR-Code für die Authenticator-App', 'shape-rendering': 'crispEdges' },
+      s('rect', { width: n + pad * 2, height: n + pad * 2, fill: '#ffffff' }));
+    let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + pad},${r + pad}h1v1h-1z`;
+    svg.append(s('path', { d, fill: '#000000' }));
+    box.replaceChildren(svg);
+  }).catch(() => box.replaceChildren(h('p', { class: 'sheet-text' }, 'Der QR-Code konnte nicht geladen werden. Nutze den Button oder den Schlüssel.')));
+}
+
 /* ---------------- banners ---------------- */
 
 function renderBanners() {
@@ -866,6 +1143,11 @@ function renderBanners() {
   const items = [];
   if (!store.isStorageAvailable()) {
     items.push(h('div', { class: 'banner warn' }, h('span', null, h('strong', null, 'Speichern nicht möglich. '), 'Dein Browser blockiert den Speicher (z. B. im privaten Modus). Einträge gehen beim Schließen verloren.')));
+  }
+  if (sync.info().status === 'loggedout') {
+    items.push(h('div', { class: 'banner warn' },
+      h('span', null, h('strong', null, 'Synchronisierung pausiert. '), 'Bitte melde dich neu an.'),
+      h('button', { type: 'button', class: 'btn small', onclick: () => syncLoginSheet(sync.info().email) }, 'Anmelden')));
   }
   if (store.hasDemo()) {
     items.push(h('div', { class: 'banner' },
@@ -887,7 +1169,20 @@ function renderBanners() {
 /* ---------------- boot ---------------- */
 
 store.init();
-store.subscribe(() => renderView());
+store.subscribe(({ remote } = {}) => {
+  // Changes from another device: show them in the form too, unless you're in the middle of editing.
+  if (remote && !form.dirty) loadFormEntry();
+  renderView();
+});
+sync.onChange(() => {
+  renderBanners();
+  const status = $('#sync-status');
+  if (status) {
+    status.textContent = SYNC_STATUS[sync.info().status] ?? '';
+    $('#sync-last').textContent = relativeTime(sync.info().lastSync);
+  }
+});
+sync.start();
 initHeute();
 loadFormEntry();
 route();

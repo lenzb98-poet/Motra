@@ -1,0 +1,12 @@
+# Files in this repository that must not be served as part of the app
+.git
+.gitignore
+.assetsignore
+.dev.vars*
+.wrangler
+node_modules
+worker
+wrangler.jsonc
+package.json
+package-lock.json
+*.md

@@ -1,0 +1,18 @@
+// Cloudflare Worker: serves the app from this folder and the sync API from worker/index.js.
+// Secrets (ALLOWED_EMAILS, DATA_KEY, SETUP_CODE) are set in the Cloudflare dashboard, not here.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "motra",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "keep_vars": true,
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "motra", "database_id": "9c89c38d-1c53-473b-b3cd-9fb6082be325" }
+  ],
+  "observability": { "enabled": true }
+}

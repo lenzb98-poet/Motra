@@ -811,3 +811,30 @@ textarea:focus, .field input:focus { outline: none; border-color: var(--accent);
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------------- sync ---------------- */
+
+.qr-box { display: grid; place-items: center; }
+.qr-box svg { width: min(220px, 70vw); height: auto; border-radius: 12px; }
+.secret-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.secret {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-0);
+  font: 600 14px/1.4 ui-monospace, 'SF Mono', Menlo, monospace;
+  letter-spacing: .04em;
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.recovery {
+  margin: 0; padding: 12px 14px;
+  list-style: none;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px;
+  border-radius: var(--radius);
+  background: var(--ink-0);
+}
+.recovery code { font: 600 15px/1.4 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .05em; user-select: all; -webkit-user-select: all; }
+a.btn { text-decoration: none; }

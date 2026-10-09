@@ -45,7 +45,12 @@ export function currentSlot(date = new Date()) {
 
 /* ---------------- state & persistence ---------------- */
 
-const blank = () => ({ version: 1, entries: [], meds: [], settings: { lastBackup: null } });
+const EPOCH = '1970-01-01T00:00:00.000Z';
+const blank = () => ({ version: 1, entries: [], meds: [], deleted: { entries: {}, meds: {} }, settings: { lastBackup: null } });
+const entryKey = e => `${e.date}|${e.slot}`;
+const now = () => new Date().toISOString();
+// Every change to a medication bumps its timestamp; sync keeps the newer copy.
+const touch = med => { med.updatedAt = now(); };
 
 let state = blank();
 let storageAvailable = true;
@@ -77,7 +82,8 @@ export const subscribe = fn => listeners.add(fn);
 export const getState = () => state;
 export const settings = () => state.settings;
 
-function commit() {
+// `remote` marks changes that came from sync, so they don't trigger another upload.
+function commit({ remote = false } = {}) {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
     storageAvailable = true;
@@ -85,7 +91,7 @@ function commit() {
     storageAvailable = false;
   }
   rev++;
-  listeners.forEach(fn => fn());
+  listeners.forEach(fn => fn({ remote }));
 }
 
 // Ask the browser to keep our data even under storage pressure.
@@ -113,7 +119,7 @@ export function normalize(data) {
       id: typeof e.id === 'string' ? e.id : uid(),
       date: e.date, slot: e.slot, mood: roundMood(mood),
       note: typeof e.note === 'string' ? e.note.slice(0, 1000) : '',
-      updatedAt: typeof e.updatedAt === 'string' ? e.updatedAt : new Date().toISOString(),
+      updatedAt: typeof e.updatedAt === 'string' ? e.updatedAt : EPOCH,
       ...(e.demo ? { demo: true } : {}),
     });
   }
@@ -130,6 +136,7 @@ export function normalize(data) {
       name: m.name.trim().slice(0, 60),
       color: Number.isInteger(m.color) ? ((m.color % MED_COLORS) + MED_COLORS) % MED_COLORS : meds.length % MED_COLORS,
       phases,
+      updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : EPOCH,
       ...(m.demo ? { demo: true } : {}),
     });
   }
@@ -138,8 +145,18 @@ export function normalize(data) {
     version: 1,
     entries,
     meds,
+    deleted: { entries: cleanStamps(data.deleted?.entries), meds: cleanStamps(data.deleted?.meds) },
     settings: { lastBackup: typeof data.settings?.lastBackup === 'string' ? data.settings.lastBackup : null },
   };
+}
+
+// Deletion markers: { key: ISO time }. Kept so a deletion also reaches other devices.
+function cleanStamps(obj) {
+  const out = {};
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) if (typeof v === 'string' && k.length < 100) out[k] = v;
+  }
+  return out;
 }
 
 /* ---------------- entries ---------------- */
@@ -162,7 +179,9 @@ export function saveEntry({ date, slot, mood, note }) {
 }
 
 export function deleteEntry(date, slot) {
-  state.entries = state.entries.filter(e => !(e.date === date && e.slot === slot));
+  const e = getEntry(date, slot);
+  if (e && !e.demo) state.deleted.entries[entryKey(e)] = now();
+  state.entries = state.entries.filter(x => x !== e);
   commit();
 }
 
@@ -180,7 +199,7 @@ function nextColor() {
 }
 
 export function addMed({ name, dose, start }) {
-  state.meds.push({ id: uid(), name: name.trim(), color: nextColor(), phases: [{ id: uid(), dose: dose.trim(), start, end: null }] });
+  state.meds.push({ id: uid(), name: name.trim(), color: nextColor(), phases: [{ id: uid(), dose: dose.trim(), start, end: null }], updatedAt: now() });
   commit();
 }
 
@@ -197,6 +216,7 @@ export function changeDose(id, dose, date) {
     med.phases.push({ id: uid(), dose: dose.trim(), start: date, end: null });
   }
   med.phases.sort((a, b) => a.start.localeCompare(b.start));
+  touch(med);
   commit();
 }
 
@@ -206,6 +226,7 @@ export function stopMed(id, lastDay) {
   const open = med && openPhase(med);
   if (!open) return;
   open.end = maxKey(lastDay, open.start);
+  touch(med);
   commit();
 }
 
@@ -216,10 +237,13 @@ export function updateMed(id, { name, phases }) {
   med.phases = phases.map(p => ({ id: p.id || uid(), dose: p.dose.trim(), start: p.start, end: p.end || null }))
     .sort((a, b) => a.start.localeCompare(b.start));
   delete med.demo;
+  touch(med);
   commit();
 }
 
 export function deleteMed(id) {
+  const med = getMed(id);
+  if (med && !med.demo) state.deleted.meds[id] = now();
   state.meds = state.meds.filter(m => m.id !== id);
   commit();
 }
@@ -338,6 +362,74 @@ export function medComparison(med, from, to) {
     (activePhase(med, d) ? withV : withoutV).push(v);
   }
   return { with: { avg: mean(withV), days: withV.length }, without: { avg: mean(withoutV), days: withoutV.length } };
+}
+
+/* ---------------- sync ---------------- */
+
+const byEntryKey = (a, b) => a.date.localeCompare(b.date) || SLOT_IDS.indexOf(a.slot) - SLOT_IDS.indexOf(b.slot);
+const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const sortedStamps = obj => Object.fromEntries(Object.keys(obj).sort().map(k => [k, obj[k]]));
+
+// What gets uploaded: everything except example data, in a fixed order so two copies compare equal.
+export const syncPayload = () => canonical(state);
+
+// Canonical form of any data set (this device's, or a copy from the server).
+export function canonicalOf(data) {
+  try { return canonical(normalize({ ...data, settings: {} })); } catch (e) { return null; }
+}
+
+function canonical(src) {
+  return {
+    version: 1,
+    entries: src.entries.filter(e => !e.demo)
+      .map(({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt }))
+      .sort(byEntryKey),
+    meds: src.meds.filter(m => !m.demo)
+      .map(({ id, name, color, updatedAt, phases }) => ({
+        id, name, color, updatedAt, phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
+      }))
+      .sort(byId),
+    deleted: { entries: sortedStamps(src.deleted.entries), meds: sortedStamps(src.deleted.meds) },
+  };
+}
+
+const TOMBSTONE_DAYS = 400;
+
+// Merges another device's data into this one: per entry/medication the newer copy wins,
+// a deletion wins over anything older than it. Returns true if local data changed.
+export function mergeRemote(remoteData) {
+  if (!remoteData) return false;
+  const r = normalize({ ...remoteData, settings: {} });
+  const before = JSON.stringify(syncPayload());
+
+  const cutoff = new Date(Date.now() - TOMBSTONE_DAYS * 86400_000).toISOString();
+  const mergeStamps = (a, b) => {
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b)) if (!out[k] || v > out[k]) out[k] = v;
+    for (const k of Object.keys(out)) if (out[k] < cutoff) delete out[k];
+    return out;
+  };
+  const deleted = { entries: mergeStamps(state.deleted.entries, r.deleted.entries), meds: mergeStamps(state.deleted.meds, r.deleted.meds) };
+
+  const entries = new Map(state.entries.map(e => [entryKey(e), e]));
+  for (const e of r.entries) {
+    const cur = entries.get(entryKey(e));
+    if (!cur || cur.demo || e.updatedAt > cur.updatedAt) entries.set(entryKey(e), e);
+  }
+  const meds = new Map(state.meds.map(m => [m.id, m]));
+  for (const m of r.meds) {
+    const cur = meds.get(m.id);
+    if (!cur || m.updatedAt > cur.updatedAt) meds.set(m.id, m);
+  }
+
+  state.entries = [...entries.values()].filter(e => e.demo || !(deleted.entries[entryKey(e)] >= e.updatedAt)).sort(byEntryKey);
+  state.meds = [...meds.values()].filter(m => m.demo || !(deleted.meds[m.id] >= m.updatedAt));
+  state.deleted = deleted;
+
+  const changed = JSON.stringify(syncPayload()) !== before;
+  if (changed) commit({ remote: true });
+  else rev++;
+  return changed;
 }
 
 /* ---------------- backup ---------------- */
