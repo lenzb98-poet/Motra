@@ -931,7 +931,8 @@ function syncSection() {
 
 const AUTH_ERRORS = {
   credentials: 'E-Mail oder Passwort stimmt nicht.',
-  setup_code: 'Der Einrichtungscode stimmt nicht.',
+  setup_code: 'Der Einrichtungscode stimmt nicht, oder diese Adresse ist nicht freigeschaltet.',
+  '2fa_active': 'Zwei-Faktor ist für dieses Konto schon eingerichtet. Bitte melde dich neu an.',
   code: 'Der Code stimmt nicht. Nimm den aktuellen Code aus der App und prüfe, ob die Uhrzeit deines Geräts stimmt.',
   exists: 'Für diese Adresse gibt es schon ein Passwort. Melde dich damit an.',
   invalid: 'Diese E-Mail-Adresse ist nicht freigeschaltet.',
@@ -1074,7 +1075,7 @@ function syncLoginSheet(prefillEmail = '') {
   };
 
   const stepTotpVerify = () => {
-    const code = h('input', { id: 'sync-totp', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', required: true, maxlength: 12 });
+    const code = h('input', { id: 'sync-totp', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', required: true, maxlength: 24 });
     openSheet('Code eingeben', authForm({
       fields: [
         h('p', { class: 'sheet-text' }, 'Gib den 6-stelligen Code aus deiner Authenticator-App ein. Hast du keinen Zugriff darauf, geht auch ein Wiederherstellungscode.'),

@@ -130,25 +130,19 @@ async function register(request, env) {
   const { email, key, setupCode } = await body(request);
   const e = normEmail(email);
   const ip = clientIp(request);
-  await checkLock(env, `ip:${ip}`);
-  await checkLock(env, `setup:${e}`);
-  if (!allowedEmails(env).includes(e) || !isKey(key)) {
-    await fail(env, `ip:${ip}`);
-    throw new HttpError(400, 'invalid');
-  }
+  await attempt(env, `ip:${ip}`);
+  await attempt(env, `setup:${e}`);
+  // Check the setup code first and answer the same for every other problem, so nothing leaks.
+  const codeOk = typeof setupCode === 'string' && (await safeEqual(setupCode.trim(), env.SETUP_CODE));
+  if (!codeOk || !allowedEmails(env).includes(e) || !isKey(key)) throw new HttpError(403, 'setup_code');
   if (await getUser(env, e)) throw new HttpError(409, 'exists');
-  if (typeof setupCode !== 'string' || !(await safeEqual(setupCode.trim(), env.SETUP_CODE))) {
-    await fail(env, `setup:${e}`);
-    await fail(env, `ip:${ip}`);
-    throw new HttpError(403, 'setup_code');
-  }
   const salt = randomBytes(16);
   const hash = await sha256Hex(concat(salt, hexToBytes(key)));
   const res = await env.DB.prepare(
     'INSERT OR IGNORE INTO users (email, pw_salt, pw_hash, created_at) VALUES (?, ?, ?, ?)',
   ).bind(e, b64(salt), hash, Date.now()).run();
   if (!res.meta.changes) throw new HttpError(409, 'exists');
-  await clear(env, `setup:${e}`);
+  await clear(env, `setup:${e}`, `ip:${ip}`);
   return sessionResponse(env, e, 'setup2fa', { next: 'setup2fa' });
 }
 
@@ -156,22 +150,22 @@ async function login(request, env) {
   const { email, key } = await body(request);
   const e = normEmail(email);
   const ip = clientIp(request);
-  await checkLock(env, `ip:${ip}`);
-  await checkLock(env, `pw:${e}`);
+  // Limits are per network address (and per address + account), so someone guessing elsewhere
+  // can't lock the real user out. The authenticator code is the second, per-account barrier.
+  await attempt(env, `ip:${ip}`);
+  await attempt(env, `pw:${ip}:${e}`);
   const user = allowedEmails(env).includes(e) ? await getUser(env, e) : null;
   const ok = user && isKey(key) && (await safeEqual(await sha256Hex(concat(unb64(user.pw_salt), hexToBytes(key))), user.pw_hash));
-  if (!ok) {
-    await fail(env, `pw:${e}`);
-    await fail(env, `ip:${ip}`);
-    throw new HttpError(401, 'credentials');
-  }
-  await clear(env, `pw:${e}`);
+  if (!ok) throw new HttpError(401, 'credentials');
+  await clear(env, `pw:${ip}:${e}`, `ip:${ip}`);
   if (user.totp_enc) return sessionResponse(env, e, 'pending2fa', { next: 'totp' });
   return sessionResponse(env, e, 'setup2fa', { next: 'setup2fa' });
 }
 
 async function totpSetup(request, env) {
   const s = await requireSession(request, env, 'setup2fa');
+  const user = await getUser(env, s.email);
+  if (user?.totp_enc) throw new HttpError(409, '2fa_active');
   const secret = randomBytes(20);
   await env.DB.prepare('UPDATE users SET totp_pending_enc = ? WHERE email = ?')
     .bind(await encrypt(env, base32(secret)), s.email).run();
@@ -184,29 +178,31 @@ async function totpSetup(request, env) {
 async function totpConfirm(request, env) {
   const s = await requireSession(request, env, 'setup2fa');
   const { code } = await body(request);
-  await checkLock(env, `totp:${s.email}`);
+  await attempt(env, `totp:${s.email}`);
   const user = await getUser(env, s.email);
+  if (user?.totp_enc) throw new HttpError(409, '2fa_active');
   if (!user?.totp_pending_enc) throw new HttpError(400, 'no_setup');
   const secret = await decrypt(env, user.totp_pending_enc);
   const step = await verifyTotp(secret, code, 0);
-  if (step == null) {
-    await fail(env, `totp:${s.email}`);
-    throw new HttpError(401, 'code');
-  }
+  if (step == null) throw new HttpError(401, 'code');
   await clear(env, `totp:${s.email}`);
   const codes = Array.from({ length: 8 }, recoveryCode);
-  const hashes = await Promise.all(codes.map(c => sha256Hex(normRecovery(c))));
-  await env.DB.prepare(
-    'UPDATE users SET totp_enc = totp_pending_enc, totp_pending_enc = NULL, totp_last_step = ?, recovery = ? WHERE email = ?',
-  ).bind(step, JSON.stringify(hashes), s.email).run();
-  await dropSession(env, s.tokenHash);
+  const hashes = await Promise.all(codes.map(c => recoveryHash(env, c)));
+  // Only turns 2FA on if nobody else did it in the meantime with another secret.
+  const res = await env.DB.prepare(
+    `UPDATE users SET totp_enc = totp_pending_enc, totp_pending_enc = NULL, totp_last_step = ?, recovery = ?
+     WHERE email = ? AND totp_enc IS NULL AND totp_pending_enc = ?`,
+  ).bind(step, JSON.stringify(hashes), s.email, user.totp_pending_enc).run();
+  if (res.meta.changes !== 1) throw new HttpError(409, '2fa_active');
+  // Other half-finished setups must log in again (and then need the code).
+  await env.DB.prepare("DELETE FROM sessions WHERE email = ? AND stage = 'setup2fa'").bind(s.email).run();
   return sessionResponse(env, s.email, 'full', { recoveryCodes: codes });
 }
 
 async function totpVerify(request, env) {
   const s = await requireSession(request, env, 'pending2fa');
   const { code } = await body(request);
-  await checkLock(env, `totp:${s.email}`);
+  await attempt(env, `totp:${s.email}`);
   const user = await getUser(env, s.email);
   if (!user?.totp_enc) throw new HttpError(400, 'no_2fa');
 
@@ -221,7 +217,7 @@ async function totpVerify(request, env) {
       ok = res.meta.changes === 1;
     }
   } else if (typeof code === 'string' && code.trim()) {
-    const hash = await sha256Hex(normRecovery(code));
+    const hash = await recoveryHash(env, code);
     const list = JSON.parse(user.recovery || '[]');
     if (list.includes(hash)) {
       const rest = JSON.stringify(list.filter(h => h !== hash));
@@ -230,10 +226,7 @@ async function totpVerify(request, env) {
       ok = res.meta.changes === 1;
     }
   }
-  if (!ok) {
-    await fail(env, `totp:${s.email}`);
-    throw new HttpError(401, 'code');
-  }
+  if (!ok) throw new HttpError(401, 'code');
   await clear(env, `totp:${s.email}`);
   await dropSession(env, s.tokenHash);
   return sessionResponse(env, s.email, 'full', { ok: true });
@@ -335,25 +328,28 @@ function readCookie(request, name) {
 
 /* ---------------- brute-force protection ---------------- */
 
-async function checkLock(env, key) {
-  const row = await env.DB.prepare('SELECT locked_until FROM attempts WHERE key = ?').bind(key).first();
-  if (row && row.locked_until > Date.now()) {
-    throw new HttpError(429, 'locked', { retryAfter: Math.ceil((row.locked_until - Date.now()) / 1000) });
+// Counts an attempt *before* it is checked, in one atomic statement, so parallel requests can't
+// slip past the limit. A successful attempt clears its counters again.
+// The sixth attempt within a lock window is refused for LOCK_MINUTES.
+async function attempt(env, key) {
+  const now = Date.now();
+  const row = await env.DB.prepare(
+    `INSERT INTO attempts (key, fails, locked_until) VALUES (?1, 1, 0)
+     ON CONFLICT(key) DO UPDATE SET
+       fails = CASE WHEN locked_until > 0 AND locked_until <= ?2 THEN 1 ELSE fails + 1 END,
+       locked_until = CASE
+         WHEN locked_until > 0 AND locked_until <= ?2 THEN 0
+         WHEN locked_until > ?2 THEN locked_until
+         WHEN fails + 1 > ?3 THEN ?4
+         ELSE 0 END
+     RETURNING fails, locked_until`,
+  ).bind(key, now, MAX_FAILS, now + LOCK_MINUTES * 60_000).first();
+  if (row && row.locked_until > now) {
+    throw new HttpError(429, 'locked', { retryAfter: Math.ceil((row.locked_until - now) / 1000) });
   }
 }
 
-async function fail(env, key) {
-  const now = Date.now();
-  await env.DB.prepare(
-    `INSERT INTO attempts (key, fails, locked_until) VALUES (?, 1, 0)
-     ON CONFLICT(key) DO UPDATE SET fails = CASE WHEN locked_until > 0 AND locked_until <= ? THEN 1 ELSE fails + 1 END,
-                                    locked_until = CASE WHEN locked_until > 0 AND locked_until <= ? THEN 0 ELSE locked_until END`,
-  ).bind(key, now, now).run();
-  await env.DB.prepare('UPDATE attempts SET locked_until = ?, fails = 0 WHERE key = ? AND fails >= ?')
-    .bind(now + LOCK_MINUTES * 60_000, key, MAX_FAILS).run();
-}
-
-const clear = (env, key) => env.DB.prepare('DELETE FROM attempts WHERE key = ?').bind(key).run();
+const clear = (env, ...keys) => env.DB.batch(keys.map(k => env.DB.prepare('DELETE FROM attempts WHERE key = ?').bind(k)));
 const clientIp = request => request.headers.get('CF-Connecting-IP') || 'local';
 
 /* ---------------- TOTP (RFC 6238, SHA-1, 6 digits, 30 s) ---------------- */
@@ -407,10 +403,23 @@ function unbase32(text) {
 }
 
 function recoveryCode() {
-  const s = base32(randomBytes(5)).toLowerCase(); // 8 characters
-  return `${s.slice(0, 4)}-${s.slice(4, 8)}`;
+  const s = base32(randomBytes(10)).toLowerCase(); // 16 characters
+  return s.match(/.{4}/g).join('-');
 }
 const normRecovery = c => c.toLowerCase().replace(/[^a-z2-7]/g, '');
+
+// Keyed with a key derived from DATA_KEY: a copy of the database alone can't be used to find the codes.
+let recoveryKey = null;
+async function recoveryHash(env, code) {
+  if (!recoveryKey) {
+    const base = await crypto.subtle.importKey('raw', unb64(env.DATA_KEY.trim()), 'HKDF', false, ['deriveKey']);
+    recoveryKey = await crypto.subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: new TextEncoder().encode('motra-recovery-codes') },
+      base, { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, ['sign']);
+  }
+  const mac = await crypto.subtle.sign('HMAC', recoveryKey, new TextEncoder().encode(normRecovery(String(code))));
+  return toHex(new Uint8Array(mac));
+}
 
 /* ---------------- encryption at rest (AES-GCM) ---------------- */
 

@@ -378,17 +378,16 @@ export function canonicalOf(data) {
   try { return canonical(normalize({ ...data, settings: {} })); } catch (e) { return null; }
 }
 
+const projectEntry = ({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt });
+const projectMed = ({ id, name, color, updatedAt, phases }) => ({
+  id, name, color, updatedAt, phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
+});
+
 function canonical(src) {
   return {
     version: 1,
-    entries: src.entries.filter(e => !e.demo)
-      .map(({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt }))
-      .sort(byEntryKey),
-    meds: src.meds.filter(m => !m.demo)
-      .map(({ id, name, color, updatedAt, phases }) => ({
-        id, name, color, updatedAt, phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
-      }))
-      .sort(byId),
+    entries: src.entries.filter(e => !e.demo).map(projectEntry).sort(byEntryKey),
+    meds: src.meds.filter(m => !m.demo).map(projectMed).sort(byId),
     deleted: { entries: sortedStamps(src.deleted.entries), meds: sortedStamps(src.deleted.meds) },
   };
 }
@@ -411,15 +410,19 @@ export function mergeRemote(remoteData) {
   };
   const deleted = { entries: mergeStamps(state.deleted.entries, r.deleted.entries), meds: mergeStamps(state.deleted.meds, r.deleted.meds) };
 
+  // Newer copy wins. On equal timestamps both devices must still pick the same copy,
+  // so the tie is broken by content; otherwise they'd overwrite each other forever.
+  const wins = (a, b, project) => a.updatedAt > b.updatedAt
+    || (a.updatedAt === b.updatedAt && JSON.stringify(project(a)) > JSON.stringify(project(b)));
   const entries = new Map(state.entries.map(e => [entryKey(e), e]));
   for (const e of r.entries) {
     const cur = entries.get(entryKey(e));
-    if (!cur || cur.demo || e.updatedAt > cur.updatedAt) entries.set(entryKey(e), e);
+    if (!cur || cur.demo || wins(e, cur, projectEntry)) entries.set(entryKey(e), e);
   }
   const meds = new Map(state.meds.map(m => [m.id, m]));
   for (const m of r.meds) {
     const cur = meds.get(m.id);
-    if (!cur || m.updatedAt > cur.updatedAt) meds.set(m.id, m);
+    if (!cur || wins(m, cur, projectMed)) meds.set(m.id, m);
   }
 
   state.entries = [...entries.values()].filter(e => e.demo || !(deleted.entries[entryKey(e)] >= e.updatedAt)).sort(byEntryKey);

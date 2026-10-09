@@ -1,8 +1,7 @@
 // Offline support: serve the app from cache, refresh the cache in the background.
-const CACHE = 'motra-v7';
+const CACHE = 'motra-v8';
 const ASSETS = [
   './',
-  'index.html',
   'manifest.webmanifest',
   'css/styles.css',
   'js/app.js',
@@ -35,13 +34,15 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   // Sync API answers must always come fresh from the server.
   if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
-  const key = req.mode === 'navigate' ? 'index.html' : req;
+  // Pages are always served from './': Cloudflare redirects /index.html to /, and a cached
+  // redirect can't be used to answer a navigation.
+  const key = req.mode === 'navigate' ? './' : req;
   event.respondWith(
     caches.open(CACHE).then(async cache => {
       const cached = await cache.match(key, { ignoreSearch: true });
       const network = fetch(req)
         .then(res => {
-          if (res.ok) cache.put(key, res.clone());
+          if (res.ok && !res.redirected) cache.put(key, res.clone());
           return res;
         })
         .catch(() => cached);
