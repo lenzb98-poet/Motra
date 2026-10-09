@@ -919,7 +919,8 @@ function syncSection() {
       text.textContent = 'Gleiche deine Einträge zwischen deinen Geräten ab, zum Beispiel iPhone und iPad. Anmeldung mit Passwort und Code aus einer Authenticator-App.';
       box.append(h('button', { type: 'button', class: 'btn', onclick: () => syncLoginSheet() }, 'Synchronisierung einrichten'));
     } else if (s.configured === false) {
-      text.textContent = 'Der Sync-Server ist noch nicht fertig eingerichtet (es fehlen Einstellungen in Cloudflare).';
+      text.textContent = 'Der Sync-Server ist noch nicht fertig eingerichtet. '
+        + (s.missing?.length ? `In Cloudflare fehlt: ${s.missing.join(', ')}.` : 'Es fehlen Einstellungen in Cloudflare.');
     } else if (s.offline) {
       text.textContent = 'Keine Verbindung. Zum Einrichten der Synchronisierung brauchst du Internet.';
     } else {

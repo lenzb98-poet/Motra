@@ -86,7 +86,7 @@ async function handleApi(request, env, url) {
   }
 
   if (!configured(env)) {
-    if (route === 'GET /api/status') return json({ configured: false, user: null });
+    if (route === 'GET /api/status') return json({ configured: false, missing: missingSettings(env), user: null });
     throw new HttpError(503, 'not_configured');
   }
   await ensureSchema(env.DB);
@@ -112,7 +112,18 @@ async function handleApi(request, env, url) {
 /* ---------------- account & login ---------------- */
 
 const allowedEmails = env => (env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-const configured = env => !!(env.DB && env.DATA_KEY && env.ALLOWED_EMAILS && env.SETUP_CODE);
+// Names of missing or unusable settings (never their values).
+function missingSettings(env) {
+  const missing = [];
+  if (!env.DB) missing.push('DB (D1-Datenbank)');
+  for (const name of ['ALLOWED_EMAILS', 'DATA_KEY', 'SETUP_CODE']) if (!String(env[name] ?? '').trim()) missing.push(name);
+  if (String(env.DATA_KEY ?? '').trim() && !validDataKey(env.DATA_KEY)) missing.push('DATA_KEY (ungültig: muss Base64 von 32 Bytes sein)');
+  return missing;
+}
+function validDataKey(v) {
+  try { return unb64(String(v).trim()).length === 32; } catch { return false; }
+}
+const configured = env => missingSettings(env).length === 0;
 const normEmail = v => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 const getUser = (env, email) => env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
 
