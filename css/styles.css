@@ -270,6 +270,13 @@ main { display: block; }
   line-height: 1.2;
 }
 .moods { --mood-gap: 6px; display: flex; justify-content: space-between; gap: var(--mood-gap); touch-action: pan-y; }
+/* Pressing and dragging across the faces must never select the labels or open the iOS
+   copy/look-up menu. */
+.moods, .moods *, .fine, .fine *, .mood-caption {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 .mood {
   flex: 1 1 0;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
