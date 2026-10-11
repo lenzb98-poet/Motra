@@ -460,16 +460,22 @@ export function momentsChart(container, { from, to }) {
   const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
   yAxis(svg, y, left, right);
 
-  // behind the mood curve: a faint band per period and a hairline per single day, in the entry's color
+  // behind the mood curve, like the medication markers: a line in the entry's color runs
+  // unbroken from the top of the plot down to its own lane (a day: its dot; a period: its start and end)
+  const laneOf = new Map(lanes.map((l, i) => [l.key, i]));
   const marks = s('g', { class: 'moments' });
+  const fade = moments.length > 40 ? .2 : .45;     // many daily entries would otherwise paint a wall
+  const line = (m, px) => marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: laneTop(laneOf.get(m.title.toLowerCase()), lanesTop) + 25, class: 'marker', style: `stroke:${colorOf(m)};opacity:${fade}` }));
   for (const m of moments) {
     if (m.span) {
+      const last = store.momentLast(m);
       const a = x(m.date < from ? from : m.date, 0);
-      const b = x(store.momentLast(m) > to ? to : store.momentLast(m), 1);
-      marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
+      const e = x(last > to ? to : last, 1);
+      marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, e - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
+      if (m.date >= from) line(m, a);
+      if (m.end != null && m.end <= to) line(m, e);
     } else {
-      const px = x(m.date, 0.5);
-      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: M.top + plotH, class: 'moment-line', style: `stroke:${colorOf(m)}` }));
+      line(m, x(m.date, 0.5));
     }
   }
   svg.append(marks);
