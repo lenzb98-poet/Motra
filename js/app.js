@@ -1471,7 +1471,7 @@ $('#other-title').addEventListener('input', () => {
   document.querySelectorAll('#other-quick .quick-chip').forEach(b => b.classList.toggle('on', b.firstChild.textContent.toLowerCase() === v));
 });
 $('#other-date').addEventListener('change', () => { $('#other-end').min = $('#other-date').value; });
-// "Einträge" and "Notiz" are folded away by default; a tap opens one, another tap closes it.
+// "Einträge" is open by default, "Notiz" folded. A tap opens one, another tap on it closes it.
 function showEntryTab(tab) {
   for (const name of ['other', 'note']) {
     const open = tab === name;
@@ -1480,10 +1480,11 @@ function showEntryTab(tab) {
     $(`#panel-${name}`).hidden = !open;
   }
 }
-let entryTab = null;
+let entryTab = 'other';   // "Einträge" starts open, "Notiz" folded
 for (const name of ['other', 'note']) {
   $(`#tab-${name}`).addEventListener('click', () => { entryTab = entryTab === name ? null : name; showEntryTab(entryTab); });
 }
+showEntryTab(entryTab);
 $('#today-other-add').addEventListener('click', addTodayOther);
 $('#today-other-manage').addEventListener('click', activitiesSheet);
 $('#other-manage').addEventListener('click', activitiesSheet);
