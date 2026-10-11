@@ -3,8 +3,8 @@ import * as sync from './sync.js';
 import * as push from './push.js';
 import { moodChart, moodLegend, medChart, medLegend, eventText, momentsChart, momentsLegend } from './charts.js';
 import {
-  h, s, icon, todayKey, addDays, diffDays, formatLong, formatDayMonth, formatShort, formatWeekday,
-  relativeDay, num1, signed1,
+  h, s, icon, todayKey, addDays, diffDays, fromKey, formatLong, formatDayMonth, formatShort, formatWeekday,
+  formatMonth, formatMonthYear, relativeDay, num1, signed1,
 } from './util.js';
 
 const $ = sel => document.querySelector(sel);
@@ -570,6 +570,8 @@ function renderVerlauf() {
     stat('Einträge', String(st.count), possibleDays ? `von ${possibleDays * 3} möglichen` : 'bisher'),
   );
 
+  renderHeat(from, to, days, all);
+
   // chart
   moodLegend($('#mood-chart-legend'));
   moodChart($('#mood-chart'), { from, to });
@@ -584,6 +586,168 @@ function renderVerlauf() {
   );
 
   renderEntryList();
+}
+
+/* ---------- "Auf einen Blick": the week grid, scaled to the chosen range ----------
+   7 days   → time of day × day (big tiles, like "Deine Woche")
+   30 days  → the same, 30 thin columns
+   90 days  → calendar: one row per week, Mo–So
+   1 year   → a strip of weeks (7 rows)
+   longer   → one tile per month, one row per year */
+
+const heat = { date: null, slot: null, month: null };
+const mondayIndex = key => (fromKey(key).getDay() + 6) % 7;     // Mo = 0
+const mondayOf = key => addDays(key, -mondayIndex(key));
+// last day of the month that starts on `first` (YYYY-MM-01)
+const monthEnd = first => { const d = fromKey(first); return addDays(`${d.getMonth() === 11 ? d.getFullYear() + 1 : d.getFullYear()}-${String(d.getMonth() === 11 ? 1 : d.getMonth() + 2).padStart(2, '0')}-01`, -1); };
+
+function renderHeat(from, to, days, all) {
+  const today = todayKey();
+  const el = $('#heat');
+  const mode = days <= 7 ? 'week' : days <= 31 ? 'slots' : days <= 100 ? 'calendar' : days <= 400 ? 'strip' : 'months';
+  // keep a selection only while it's still on screen
+  if (heat.date && (heat.date < from || heat.date > to)) heat.date = heat.slot = heat.month = null;
+
+  const select = (date, slot = null, month = null) => {
+    const same = heat.date === date && heat.slot === slot && heat.month === month;
+    Object.assign(heat, same ? { date: null, slot: null, month: null } : { date, slot, month });
+    renderHeat(from, to, days, all);
+  };
+  const dayCell = (d, extra = '') => {
+    const v = store.dayAverage(d);
+    return h('button', {
+      type: 'button',
+      class: `heat-cell${v != null ? ' filled' : ''}${heat.date === d && !heat.slot && !heat.month ? ' selected' : ''}${extra}`,
+      style: v != null ? { background: store.moodColor(Math.round(v * 10) / 10) } : null,
+      title: `${formatWeekday(d)} ${formatDayMonth(d)}: ${v == null ? 'kein Eintrag' : `Ø ${num1(v)}`}`,
+      'aria-label': `${formatWeekday(d)} ${formatDayMonth(d)}: ${v == null ? 'kein Eintrag' : `Durchschnitt ${num1(v)}, ${store.moodLabel(Math.round(v))}`}`,
+      onclick: () => select(d),
+    });
+  };
+  const slotCell = (d, sl) => {
+    const e = store.dayEntries(d)[sl.id];
+    return h('button', {
+      type: 'button',
+      class: `heat-cell${e ? ' filled' : ''}${heat.date === d && heat.slot === sl.id ? ' selected' : ''}`,
+      style: e ? { background: store.moodColor(e.mood) } : null,
+      title: `${formatWeekday(d)} ${formatDayMonth(d)}, ${sl.label}: ${e ? num1(e.mood) : 'kein Eintrag'}`,
+      'aria-label': `${formatWeekday(d)} ${formatDayMonth(d)}, ${sl.label}: ${e ? store.describeMood(e.mood) : 'kein Eintrag'}`,
+      onclick: () => select(d, sl.id),
+    });
+  };
+  const dates = Array.from({ length: diffDays(from, to) + 1 }, (_, i) => addDays(from, i));
+  let grid, meta;
+
+  if (mode === 'week' || mode === 'slots') {
+    const n = dates.length;
+    const cells = [h('div')];
+    dates.forEach(d => {
+      const monday = mondayIndex(d) === 0;
+      cells.push(mode === 'week'
+        ? h('div', { class: `heat-head${d === today ? ' today' : ''}` }, h('strong', null, formatWeekday(d)), fromKey(d).getDate() + '.')
+        : h('div', { class: `heat-head tick${d === today ? ' today' : ''}` }, monday || (d === from && 7 - mondayIndex(d) >= 3) ? h('span', null, fromKey(d).getDate() + '.') : null));
+    });
+    for (const sl of store.SLOTS) {
+      cells.push(h('div', { class: 'heat-label' }, sl.label));
+      dates.forEach(d => cells.push(slotCell(d, sl)));
+    }
+    if (mode === 'week') {
+      cells.push(h('div', { class: 'heat-label' }, 'Ø'));
+      dates.forEach(d => { const v = store.dayAverage(d); cells.push(h('div', { class: `week-avg${v == null ? ' empty' : ''}` }, v == null ? '–' : num1(v))); });
+    }
+    grid = h('div', { class: `heat-grid ${mode}`, style: { '--cols': n } }, ...cells);
+    meta = mode === 'week' ? 'Jedes Feld ist eine Tageszeit.' : 'Jede Spalte ist ein Tag, jede Zeile eine Tageszeit. Tippe auf ein Feld.';
+  } else if (mode === 'calendar') {
+    const start = mondayOf(from);
+    const weeks = Math.floor(diffDays(start, to) / 7) + 1;
+    const cells = [h('div'), ...['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(w => h('div', { class: 'heat-head' }, w))];
+    for (let w = 0; w < weeks; w++) {
+      const monday = addDays(start, w * 7);
+      cells.push(h('div', { class: 'heat-label small' }, formatDayMonth(monday)));
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(monday, i);
+        cells.push(d < from || d > to ? h('div', { class: 'heat-cell blank' }) : dayCell(d, d === today ? ' today' : ''));
+      }
+    }
+    grid = h('div', { class: 'heat-grid calendar' }, ...cells);
+    meta = 'Jede Zeile ist eine Woche, jedes Feld ein Tag (Durchschnitt). Tippe auf ein Feld.';
+  } else if (mode === 'strip') {
+    const start = mondayOf(from);
+    const weeks = Math.floor(diffDays(start, to) / 7) + 1;
+    const labels = [];
+    let lastLabelCol = -9;
+    for (let w = 0; w < weeks; w++) {
+      // label the week that contains the 1st of a month
+      const monday = addDays(start, w * 7);
+      const first = Array.from({ length: 7 }, (_, i) => addDays(monday, i)).find(d => fromKey(d).getDate() === 1 && d >= from);
+      if (first && w - lastLabelCol >= 3) { labels.push(h('span', { style: { gridColumn: `${w + 1} / span 3` } }, formatMonth(first))); lastLabelCol = w; }
+    }
+    const cells = [];
+    for (let i = 0; i < 7; i++) {
+      for (let w = 0; w < weeks; w++) {
+        const d = addDays(start, w * 7 + i);
+        cells.push(d < from || d > to ? h('div', { class: 'heat-cell blank', style: { gridColumn: w + 1, gridRow: i + 1 } })
+          : (() => { const c = dayCell(d, d === today ? ' today' : ''); c.style.gridColumn = String(w + 1); c.style.gridRow = String(i + 1); return c; })());
+      }
+    }
+    grid = h('div', { class: 'heat-strip', style: { '--weeks': weeks } },
+      h('div', { class: 'heat-strip-months' }, ...labels),
+      h('div', { class: 'heat-strip-days' }, ...['Mo', '', 'Mi', '', 'Fr', '', ''].map(w => h('span', null, w))),
+      h('div', { class: 'heat-strip-cells' }, ...cells));
+    meta = 'Jede Spalte ist eine Woche, jedes Feld ein Tag (Durchschnitt). Tippe auf ein Feld.';
+  } else {
+    const y0 = fromKey(from).getFullYear(), y1 = fromKey(to).getFullYear();
+    const cells = [h('div'), ...'JFMAMJJASOND'.split('').map(m => h('div', { class: 'heat-head' }, m))];
+    for (let y = y0; y <= y1; y++) {
+      cells.push(h('div', { class: 'heat-label small' }, String(y)));
+      for (let m = 0; m < 12; m++) {
+        const first = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+        const last = monthEnd(first);
+        if (last < from || first > to) { cells.push(h('div', { class: 'heat-cell blank' })); continue; }
+        const key = first.slice(0, 7);
+        const w = store.windowAverage(first < from ? from : first, last > to ? to : last);
+        cells.push(h('button', {
+          type: 'button',
+          class: `heat-cell${w.avg != null ? ' filled' : ''}${heat.month === key ? ' selected' : ''}`,
+          style: w.avg != null ? { background: store.moodColor(Math.round(w.avg * 10) / 10) } : null,
+          title: `${formatMonthYear(first)}: ${w.avg == null ? 'keine Einträge' : `Ø ${num1(w.avg)}`}`,
+          'aria-label': `${formatMonthYear(first)}: ${w.avg == null ? 'keine Einträge' : `Durchschnitt ${num1(w.avg)}`}`,
+          onclick: () => select(first, null, key),
+        }));
+      }
+    }
+    grid = h('div', { class: 'heat-grid months' }, ...cells);
+    meta = 'Jedes Feld ist ein Monat (Durchschnitt). Tippe auf ein Feld.';
+  }
+  $('#heat-meta').textContent = meta;
+  el.replaceChildren(store.rangeStats(from, to).count ? grid : h('p', { class: 'empty-text' }, 'In diesem Zeitraum gibt es noch keine Einträge.'));
+
+  // Detail line for the tapped field.
+  const cap = $('#heat-caption');
+  if (!heat.date) {
+    cap.replaceChildren();
+    cap.hidden = true;
+  } else if (heat.month) {
+    const first = heat.date;
+    const last = monthEnd(first);
+    const r = store.rangeStats(first, last > today ? today : last);
+    cap.hidden = false;
+    cap.replaceChildren(h('strong', null, formatMonthYear(first)), r.avg == null ? ' · keine Einträge' : ` · Ø ${num1(r.avg)} · ${r.count} Einträge`);
+  } else {
+    const d = heat.date;
+    const entries = store.dayEntries(d);
+    const avg = store.dayAverage(d);
+    const open = heat.slot ?? store.SLOTS.find(sl => entries[sl.id])?.id ?? store.currentSlot();
+    cap.hidden = false;
+    cap.replaceChildren(
+      h('strong', null, `${formatWeekday(d)}, ${formatDayMonth(d)}`),
+      ` · Ø ${avg == null ? '–' : num1(avg)} · `,
+      store.SLOTS.map(sl => `${sl.label} ${entries[sl.id] ? num1(entries[sl.id].mood) : '–'}`).join(' · '),
+      h('button', { type: 'button', class: 'link-btn', onclick: () => { selectEntry(d, open); location.hash = '#heute'; } }, 'Eintrag öffnen'));
+  }
+  $('#heat-legend').replaceChildren(
+    ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
+    h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
 }
 
 function renderEntryList() {
