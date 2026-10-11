@@ -983,3 +983,18 @@ a.btn { text-decoration: none; }
 .today-other .card-meta { margin: 0; }
 .today-other-add { display: flex; gap: 8px; }
 .today-other-add input { flex: 1 1 auto; min-width: 0; }
+
+/* Archive: a folded section under the lists */
+.archive { margin-top: 12px; border-top: 1px solid var(--ink-3); padding-top: 4px; }
+.archive > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: 44px; list-style: none; cursor: pointer;
+  font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.archive > summary::-webkit-details-marker { display: none; }
+.archive > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.archive > summary .chevron { width: 18px; height: 18px; transition: transform .2s; }
+.archive[open] > summary .chevron { transform: rotate(180deg); }
+.archive-body { display: flex; flex-direction: column; gap: 12px; padding-bottom: 4px; opacity: .85; }
+.med-list > .archive { margin-top: 0; }
+.archive-body .other-row { margin: 0; width: 100%; padding-left: 0; padding-right: 0; }

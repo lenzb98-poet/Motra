@@ -182,8 +182,8 @@ function renderTodayOther() {
   const day = isToday ? 'heute' : relativeDay(date) === 'Gestern' ? 'gestern' : `am ${formatDayMonth(date)}`;
   const moments = store.getState().moments;
   const colors = store.momentColors();
-  const onDay = moments.filter(m => !m.span && m.date === date);          // single entries I can toggle
-  const running = moments.filter(m => m.span && store.momentCovers(m, date)); // periods covering that day
+  const onDay = moments.filter(m => !m.span && !m.archived && m.date === date);          // single entries I can toggle
+  const running = moments.filter(m => m.span && !m.archived && store.momentCovers(m, date)); // periods covering that day
   const has = key => onDay.find(m => m.title.toLowerCase() === key);
   const count = onDay.length + running.length;
   const badge = $('#tab-other-count');
@@ -197,7 +197,7 @@ function renderTodayOther() {
   // Titles that were used for single days before, most frequent first.
   const counts = new Map();
   for (const m of moments) {
-    if (m.span) continue;
+    if (m.span || m.archived) continue;
     const k = m.title.toLowerCase();
     const c = counts.get(k) ?? { title: m.title, n: 0, last: '' };
     c.n++;
@@ -219,7 +219,7 @@ function renderTodayOther() {
 function toggleTodayOther(title) {
   const key = title.trim().toLowerCase();
   if (!key) return;
-  const existing = store.getState().moments.find(m => !m.span && m.date === form.date && m.title.toLowerCase() === key);
+  const existing = store.getState().moments.find(m => !m.span && !m.archived && m.date === form.date && m.title.toLowerCase() === key);
   if (existing) store.deleteMoment(existing.id);
   else store.addMoment({ date: form.date, title });
 }
@@ -665,7 +665,9 @@ function medCard(m) {
   // Change/stop need a running phase without a set end; anything else is changed via "Bearbeiten".
   const open = store.openPhase(m);
   const actions = [];
-  if (st.state === 'active' && open && open.start <= todayKey()) {
+  if (m.archived) {
+    actions.push(h('button', { type: 'button', class: 'btn small', onclick: () => { store.archiveMed(m.id, false); toast(`${m.name} aus dem Archiv geholt`); } }, 'Wiederherstellen'));
+  } else if (st.state === 'active' && open && open.start <= todayKey()) {
     actions.push(h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m) }, t.change),
       h('button', { type: 'button', class: 'btn small', onclick: () => stopSheet(m) }, t.stop));
   } else if (st.state === 'stopped') {
@@ -682,6 +684,18 @@ function medCard(m) {
     st.upcoming ? h('p', { class: 'med-upcoming' }, st.upcoming) : null,
     h('p', { class: 'med-history' }, medHistory(m)),
     h('div', { class: 'med-actions' }, ...actions));
+}
+
+// A folded "Archiv" section; whether it's open survives re-rendering.
+const archiveOpen = {};
+function archiveSection(key, count, children) {
+  if (!count) return null;
+  const d = h('details', { class: 'archive' },
+    h('summary', null, h('span', null, `Archiv · ${count}`), s('svg', { viewBox: '0 0 24 24', class: 'chevron', 'aria-hidden': 'true' }, s('path', { d: 'M6 9l6 6 6-6', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))),
+    h('div', { class: 'archive-body' }, ...children));
+  d.open = !!archiveOpen[key];
+  d.addEventListener('toggle', () => { archiveOpen[key] = d.open; });
+  return d;
 }
 
 let autoToggle = false; // set while the app itself opens/closes the list, so that isn't saved as a choice
@@ -711,16 +725,19 @@ function renderMedis() {
   }, f.label)));
   if (other) { renderOther(); return; }
 
-  const meds = shownMeds();
+  const all = shownMeds();
+  const meds = all.filter(m => !m.archived);          // lists and counts: what's still in use
+  const archived = all.filter(m => m.archived);
   const groups = ['med', 'therapy'].map(kind => ({ kind, items: meds.filter(m => kindOf(m) === kind) })).filter(g => g.items.length);
+  const archive = archiveSection('med', archived.length, byKind(archived).map(medCard));
   $('#med-list').replaceChildren(...groups.flatMap(g => [
     groups.length > 1 ? h('h3', { class: 'med-group' }, TERMS[g.kind].group) : null,
     ...g.items.map(medCard),
-  ].filter(Boolean)));
+  ].filter(Boolean)), ...(archive ? [archive] : []));
   if (!meds.length) {
-    const none = { all: 'Trag deine Medikamente und Therapien mit Startdatum ein. Danach siehst du unten, wie deine Stimmung dazu verlaufen ist.',
+    const none = archived.length ? 'Alles ist archiviert.' : { all: 'Trag deine Medikamente und Therapien mit Startdatum ein. Danach siehst du unten, wie deine Stimmung dazu verlaufen ist.',
       med: 'Noch keine Medikamente eingetragen.', therapy: 'Noch keine Therapien eingetragen.' }[filter.id];
-    $('#med-list').replaceChildren(h('p', { class: 'empty-text' }, none));
+    $('#med-list').replaceChildren(h('p', { class: 'empty-text' }, none), ...(archive ? [archive] : []));
   }
 
   // Folded summary: title, count and what's running or planned.
@@ -729,7 +746,7 @@ function renderMedis() {
   const count = n => states.filter(s => s === n).length;
   const parts = [count('active') && `${count('active')} ${count('active') === 1 ? 'läuft' : 'laufen'}`,
     count('planned') && `${count('planned')} geplant`, count('stopped') && `${count('stopped')} beendet`].filter(Boolean);
-  $('#med-summary-meta').textContent = meds.length ? `${meds.length} · ${parts.join(', ')}` : 'Noch nichts eingetragen';
+  $('#med-summary-meta').textContent = meds.length ? `${meds.length} · ${parts.join(', ')}` : archived.length ? `${archived.length} im Archiv` : 'Noch nichts eingetragen';
   const details = $('#med-details');
   // Open by default only while the list is empty; afterwards remember the reader's choice.
   const shouldOpen = prefs.medListOpen ?? store.getState().meds.length === 0;
@@ -862,7 +879,7 @@ function renderOther() {
   const { from, to } = rangeBounds(prefs.rangeOther);
   momentsLegend($('#other-chart-legend'), { from, to });
   momentsChart($('#other-chart'), { from, to });
-  renderOtherEffect(from, to, titles);
+  renderOtherEffect(from, to, store.momentTitles(true));
   renderOtherList();
 }
 
@@ -933,21 +950,27 @@ function momentMood(m) {
 function renderOtherList() {
   // Running periods first, then everything by (end) date, newest first.
   const sortKey = m => store.momentLast(m);
-  const moments = [...store.getState().moments].sort((a, b) =>
-    Number(store.momentRunning(b)) - Number(store.momentRunning(a)) || sortKey(b).localeCompare(sortKey(a)) || b.updatedAt.localeCompare(a.updatedAt));
   const colors = store.momentColors();
-  const el = $('#other-list');
-  if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Noch nichts eingetragen.')); $('#btn-more-other').hidden = true; return; }
-  el.replaceChildren(...moments.slice(0, otherShown).map(m => {
+  const sorted = [...store.getState().moments].sort((a, b) =>
+    Number(store.momentRunning(b)) - Number(store.momentRunning(a)) || sortKey(b).localeCompare(sortKey(a)) || b.updatedAt.localeCompare(a.updatedAt));
+  const moments = sorted.filter(m => !m.archived);
+  const archived = sorted.filter(m => m.archived);
+  const row = m => {
     const mood = momentMood(m);
     return h('button', { type: 'button', class: `other-row${m.span ? ' span' : ''}`, onclick: () => editMomentSheet(m) },
       h('span', { class: 'other-date' }, momentDateLabel(m)),
       h('span', { class: 'other-main' },
-        h('span', { class: 'other-title' }, h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: momentCss(colors, m.title) } }), m.title, store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
+        h('span', { class: 'other-title' }, h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: momentCss(colors, m.title) } }), m.title, !m.archived && store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
         m.note ? h('span', { class: 'other-note' }, m.note) : null),
       mood != null ? h('span', { class: 'other-mood', title: m.span ? 'Ø Stimmung in diesem Zeitraum' : 'Ø Stimmung an diesem Tag', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
-  }));
+  };
+  const el = $('#other-list');
+  el.replaceChildren(...(moments.length
+    ? moments.slice(0, otherShown).map(row)
+    : [h('p', { class: 'empty-text' }, archived.length ? 'Alles ist archiviert.' : 'Noch nichts eingetragen.')]));
   $('#btn-more-other').hidden = moments.length <= otherShown;
+  const archive = archiveSection('other', archived.length, archived.map(row));
+  $('#other-archive').replaceChildren(...(archive ? [archive] : []));
 }
 
 function editMomentSheet(m, span = !!m.span) {
@@ -977,6 +1000,11 @@ function editMomentSheet(m, span = !!m.span) {
   running ? h('button', { type: 'button', class: 'btn', onclick: () => { store.endMoment(m.id, todayKey()); closeSheet(); toast(`${m.title} heute beendet`); } }, 'Heute beenden') : null,
   h('div', { class: 'sheet-actions' },
     armedButton('Löschen', 'Wirklich löschen? Nochmal tippen', () => { store.deleteMoment(m.id); closeSheet(); toast('Eintrag gelöscht'); }),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => {
+      store.archiveMoment(m.id, !m.archived);
+      closeSheet();
+      toast(m.archived ? 'Aus dem Archiv geholt' : 'Archiviert');
+    } }, m.archived ? 'Wiederherstellen' : 'Archivieren'),
     h('button', { type: 'submit', class: 'btn primary' }, 'Speichern'))));
 }
 
@@ -1110,6 +1138,11 @@ function editSheet(med) {
   err,
   h('div', { class: 'sheet-actions' },
     armedButton(T(med).del, 'Wirklich löschen? Nochmal tippen', () => { store.deleteMed(med.id); closeSheet(); toast(`${med.name} gelöscht`); }),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => {
+      store.archiveMed(med.id, !med.archived);
+      closeSheet();
+      toast(med.archived ? `${med.name} aus dem Archiv geholt` : `${med.name} archiviert`);
+    } }, med.archived ? 'Wiederherstellen' : 'Archivieren'),
     h('button', { type: 'submit', class: 'btn primary' }, 'Speichern')));
   openSheet(`${med.name} bearbeiten`, f);
 }

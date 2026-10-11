@@ -137,6 +137,7 @@ export function normalize(data) {
       color: Number.isInteger(m.color) ? ((m.color % MED_COLORS) + MED_COLORS) % MED_COLORS : meds.length % MED_COLORS,
       phases,
       kind: m.kind === 'therapy' ? 'therapy' : 'med',
+      ...(m.archived ? { archived: true } : {}),
       updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : EPOCH,
       ...(m.demo ? { demo: true } : {}),
     });
@@ -168,6 +169,7 @@ function normalizeMoments(list) {
       id, date: m.date, title: m.title.trim().slice(0, 80),
       ...(span ? { span: true, end: DATE_RE.test(m.end) && m.end >= m.date ? m.end : null } : {}),
       note: typeof m.note === 'string' ? m.note.slice(0, 500) : '',
+      ...(m.archived ? { archived: true } : {}),
       updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : EPOCH,
       ...(m.demo ? { demo: true } : {}),
     });
@@ -231,6 +233,15 @@ export function updateMoment(id, { date, title, note, span = false, end = null }
   commit();
 }
 
+// Archive = out of the lists, but the history stays (charts and evaluations still use it).
+export function archiveMoment(id, on = true) {
+  const m = state.moments.find(x => x.id === id);
+  if (!m) return;
+  if (on) m.archived = true; else delete m.archived;
+  m.updatedAt = now();
+  commit();
+}
+
 // End a running period on the given day.
 export function endMoment(id, end) {
   const m = state.moments.find(x => x.id === id);
@@ -268,9 +279,10 @@ export function momentColors() {
 }
 
 // Titles used so far, most frequent first (for the quick buttons).
-export function momentTitles() {
+export function momentTitles(includeArchived = false) {
   const counts = new Map();
   for (const m of state.moments) {
+    if (m.archived && !includeArchived) continue;
     const key = m.title.toLowerCase();
     const cur = counts.get(key) ?? { title: m.title, n: 0, last: '' };
     cur.n++;
@@ -375,6 +387,14 @@ export function updateMed(id, { name, phases }) {
   med.phases = phases.map(p => ({ id: p.id || uid(), dose: p.dose.trim(), start: p.start, end: p.end || null }))
     .sort((a, b) => a.start.localeCompare(b.start));
   delete med.demo;
+  touch(med);
+  commit();
+}
+
+export function archiveMed(id, on = true) {
+  const med = getMed(id);
+  if (!med) return;
+  if (on) med.archived = true; else delete med.archived;
   touch(med);
   commit();
 }
@@ -517,9 +537,9 @@ export function canonicalOf(data) {
 }
 
 const projectEntry = ({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt });
-const projectMoment = ({ id, date, title, span, end, note, updatedAt }) => ({ id, date, title, ...(span ? { span: true, end: end ?? null } : {}), note, updatedAt });
-const projectMed = ({ id, name, kind, color, updatedAt, phases }) => ({
-  id, name, kind: kind === 'therapy' ? 'therapy' : 'med', color, updatedAt,
+const projectMoment = ({ id, date, title, span, end, note, archived, updatedAt }) => ({ id, date, title, ...(span ? { span: true, end: end ?? null } : {}), note, ...(archived ? { archived: true } : {}), updatedAt });
+const projectMed = ({ id, name, kind, color, archived, updatedAt, phases }) => ({
+  id, name, kind: kind === 'therapy' ? 'therapy' : 'med', color, ...(archived ? { archived: true } : {}), updatedAt,
   phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
 });
 
