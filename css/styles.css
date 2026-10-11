@@ -1013,8 +1013,6 @@ a.btn { text-decoration: none; }
 .heat-grid { display: grid; gap: 4px; align-items: center; }
 .heat-grid.week, .heat-grid.slots { grid-template-columns: 54px repeat(var(--cols), minmax(0, 1fr)); }
 .heat-grid.slots { gap: 3px; }
-.heat-grid.calendar { grid-template-columns: 48px repeat(7, minmax(0, 1fr)); gap: 4px; }
-.heat-grid.months { grid-template-columns: 40px repeat(12, minmax(0, 1fr)); gap: 4px; }
 .heat-head { text-align: center; font-size: 11.5px; line-height: 1.25; color: var(--muted); font-variant-numeric: tabular-nums; }
 .heat-head strong { display: block; font-weight: 600; color: var(--text-2); font-size: 12px; }
 .heat-head.today, .heat-head.today strong { color: var(--accent); }
@@ -1034,15 +1032,17 @@ a.btn { text-decoration: none; }
 .heat-cell.selected { outline: 2px solid var(--text); outline-offset: 1px; }
 .heat-cell.today:not(.selected) { outline: 1px solid var(--accent); outline-offset: 1px; }
 .heat-grid.slots .heat-cell { height: 30px; border-radius: 3px; }
-.heat-grid.calendar .heat-cell { height: 22px; border-radius: 6px; }
-.heat-grid.months .heat-cell { height: 26px; border-radius: 6px; }
-.heat-strip { display: grid; grid-template-columns: 22px 1fr; grid-template-rows: 16px auto; gap: 2px 6px; }
-.heat-strip-months { grid-column: 2; display: grid; grid-template-columns: repeat(var(--weeks), minmax(0, 1fr)); font-size: 10.5px; color: var(--muted); }
-.heat-strip-months span { white-space: nowrap; overflow: visible; }
-.heat-strip-days { display: grid; grid-template-rows: repeat(7, 14px); gap: 2px; font-size: 10px; color: var(--muted); line-height: 14px; }
-.heat-strip-cells { display: grid; grid-template-columns: repeat(var(--weeks), minmax(0, 1fr)); grid-template-rows: repeat(7, 14px); gap: 2px; }
-.heat-strip .heat-cell { height: 14px; border-radius: 2px; }
-.heat-strip .heat-cell.selected { outline-offset: 0; }
+.heat-grid.slots .heat-cell { height: 30px; border-radius: 3px; }
+/* the continuous surface (90 days, 1 year, all) */
+.heat-surface { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 0 8px; }
+.heat-rowlabels { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.heat-rowlabels span { display: flex; align-items: center; }
+.heat-surface-main { min-width: 0; }
+.heat-surface-svg { display: block; width: 100%; border-radius: 6px; background: var(--ink-0); touch-action: pan-y; cursor: crosshair; }
+.heat-surface-svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.heat-sel { fill: none; stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.heat-axis { position: relative; height: 18px; margin-top: 6px; font-size: 10.5px; color: var(--muted); }
+.heat-axis span { position: absolute; top: 0; white-space: nowrap; }
 .heat-caption { margin: 14px 0 0; font-size: 13px; line-height: 1.6; color: var(--text-2); }
 .heat-caption strong { color: var(--text); }
 .heat-caption .link-btn { margin-left: 8px; }
