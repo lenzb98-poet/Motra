@@ -10,7 +10,9 @@ const SLOT_TEXT = {
   evening: { title: 'Guten Abend', body: 'Wie war dein Tag? Trag deine Abendstimmung ein.' },
 };
 const SEND_WINDOW_MIN = 15; // a reminder may still go out this many minutes late (cron delays)
-const MAX_SUBSCRIPTIONS = 200;
+const MAX_SUBSCRIPTIONS = 500;
+const STALE_DAYS = 60;       // the app re-registers on every start; rows untouched this long are dropped
+const SENDS_PER_RUN = 40;    // free plan: 50 subrequests per cron run; the rest waits for the next minute
 
 // Only real browser push services, so the server can't be used to send requests anywhere else.
 const PUSH_HOSTS = [/^web\.push\.apple\.com$/, /^fcm\.googleapis\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /\.notify\.windows\.com$/];
@@ -26,9 +28,11 @@ export const PUSH_SCHEMA = [
      done_slots TEXT NOT NULL DEFAULT '[]',
      sent TEXT NOT NULL DEFAULT '{}',
      origin TEXT NOT NULL,
+     user_id TEXT,
      created_at INTEGER NOT NULL,
      updated_at INTEGER NOT NULL
    )`,
+  `CREATE INDEX IF NOT EXISTS push_subs_user ON push_subs (user_id)`,
   `CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 ];
 
@@ -43,27 +47,50 @@ export async function pushKey(env) {
   return { publicKey: keys.publicKey };
 }
 
-export async function pushSubscribe(env, data, origin, testHosts) {
+// `isNew` tells the caller to apply its rate limit; `userId` links the device to a sync account (or null).
+export async function subscriptionExists(env, data, testHosts) {
+  const endpoint = checkEndpoint(data?.subscription?.endpoint, testHosts);
+  return !!(await env.DB.prepare('SELECT 1 FROM push_subs WHERE endpoint = ?').bind(endpoint).first());
+}
+
+export async function pushSubscribe(env, data, origin, testHosts, userId = null) {
   const sub = data?.subscription;
   const endpoint = checkEndpoint(sub?.endpoint, testHosts);
-  const p256dh = sub?.keys?.p256dh, auth = sub?.keys?.auth;
-  if (!isB64url(p256dh) || unb64url(p256dh).length !== 65 || !isB64url(auth) || unb64url(auth).length !== 16) {
-    throw new PushError(400, 'keys');
-  }
+  const { p256dh, auth } = await checkKeys(sub?.keys);
   const tz = checkTz(data.tz);
   const times = checkTimes(data.times);
+  if (!Object.keys(times).length) throw new PushError(400, 'times');
   const now = Date.now();
   const exists = await env.DB.prepare('SELECT 1 FROM push_subs WHERE endpoint = ?').bind(endpoint).first();
   if (!exists) {
+    await env.DB.prepare('DELETE FROM push_subs WHERE updated_at < ?').bind(now - STALE_DAYS * 86400_000).run();
     const { n } = await env.DB.prepare('SELECT count(*) AS n FROM push_subs').first();
-    if (n >= MAX_SUBSCRIPTIONS) throw new PushError(503, 'full');
+    if (n >= MAX_SUBSCRIPTIONS) {
+      // Full: make room by dropping the least recently seen devices, rather than refusing everyone new.
+      await env.DB.prepare('DELETE FROM push_subs WHERE endpoint IN (SELECT endpoint FROM push_subs ORDER BY updated_at LIMIT ?)')
+        .bind(n - MAX_SUBSCRIPTIONS + 1).run();
+    }
   }
   await env.DB.prepare(
-    `INSERT INTO push_subs (endpoint, p256dh, auth, tz, times, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO push_subs (endpoint, p256dh, auth, tz, times, origin, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, tz = excluded.tz,
-       times = excluded.times, origin = excluded.origin, updated_at = excluded.updated_at`,
-  ).bind(endpoint, p256dh, auth, tz, JSON.stringify(times), origin, now, now).run();
+       times = excluded.times, origin = excluded.origin, user_id = excluded.user_id, updated_at = excluded.updated_at`,
+  ).bind(endpoint, p256dh, auth, tz, JSON.stringify(times), origin, userId, now, now).run();
   return { ok: true };
+}
+
+// Keys must be a real P-256 point and a 16-byte secret; anything else is refused up front.
+async function checkKeys(keys) {
+  const p256dh = keys?.p256dh, auth = keys?.auth;
+  if (!isB64url(p256dh) || unb64url(p256dh).length !== 65 || !isB64url(auth) || unb64url(auth).length !== 16) {
+    throw new PushError(400, 'keys');
+  }
+  try {
+    await crypto.subtle.importKey('raw', unb64url(p256dh), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  } catch {
+    throw new PushError(400, 'keys');
+  }
+  return { p256dh, auth };
 }
 
 // The browser replaced a subscription: move its times and state over to the new one.
@@ -71,10 +98,7 @@ export async function pushResubscribe(env, data, testHosts) {
   const oldEndpoint = checkEndpoint(data?.oldEndpoint, testHosts);
   const sub = data?.subscription;
   const endpoint = checkEndpoint(sub?.endpoint, testHosts);
-  const p256dh = sub?.keys?.p256dh, auth = sub?.keys?.auth;
-  if (!isB64url(p256dh) || unb64url(p256dh).length !== 65 || !isB64url(auth) || unb64url(auth).length !== 16) {
-    throw new PushError(400, 'keys');
-  }
+  const { p256dh, auth } = await checkKeys(sub?.keys);
   await env.DB.prepare('UPDATE OR REPLACE push_subs SET endpoint = ?, p256dh = ?, auth = ?, updated_at = ? WHERE endpoint = ?')
     .bind(endpoint, p256dh, auth, Date.now(), oldEndpoint).run();
   return { ok: true };
@@ -91,8 +115,17 @@ export async function pushDone(env, data, testHosts) {
   const endpoint = checkEndpoint(data?.endpoint, testHosts);
   if (typeof data.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(data.date)) throw new PushError(400, 'date');
   const slots = Array.isArray(data.slots) ? [...new Set(data.slots.filter(s => SLOTS.includes(s)))] : [];
-  await env.DB.prepare('UPDATE push_subs SET done_date = ?, done_slots = ? WHERE endpoint = ?')
-    .bind(data.date, JSON.stringify(slots), endpoint).run();
+  const row = await env.DB.prepare('SELECT user_id FROM push_subs WHERE endpoint = ?').bind(endpoint).first();
+  if (!row) return { ok: true };
+  // With sync, a slot filled on one device also silences the reminder on the account's other devices.
+  const targets = row.user_id
+    ? (await env.DB.prepare('SELECT endpoint, done_date, done_slots FROM push_subs WHERE user_id = ?').bind(row.user_id).all()).results
+    : [{ endpoint, done_date: '', done_slots: '[]' }];
+  await env.DB.batch(targets.map(t => {
+    const merged = t.endpoint === endpoint ? slots
+      : [...new Set([...(t.done_date === data.date ? safeJson(t.done_slots, []) : []), ...slots])];
+    return env.DB.prepare('UPDATE push_subs SET done_date = ?, done_slots = ? WHERE endpoint = ?').bind(data.date, JSON.stringify(merged), t.endpoint);
+  }));
   return { ok: true };
 }
 
@@ -110,9 +143,10 @@ export async function pushTest(env, data, testHosts) {
 /* ---------------- cron: send due reminders ---------------- */
 
 export async function runReminders(env, now = new Date()) {
-  const { results } = await env.DB.prepare('SELECT * FROM push_subs').all();
-  let sent = 0;
+  const { results } = await env.DB.prepare('SELECT * FROM push_subs ORDER BY random()').all();
+  let sent = 0, attempts = 0;
   for (const row of results) {
+    if (attempts >= SENDS_PER_RUN) break; // the rest stays unmarked and goes out next minute
     const local = localTime(now, row.tz);
     if (!local) continue;
     const times = safeJson(row.times, {});
@@ -125,17 +159,38 @@ export async function runReminders(env, now = new Date()) {
       const late = local.minutes - due;
       if (late < 0 || late >= SEND_WINDOW_MIN) continue;
       if (already[slot] === local.date || done.includes(slot)) continue;
+      if (attempts >= SENDS_PER_RUN) break;
       // Mark first, so overlapping cron runs can't send twice.
+      const prevSent = row.sent;
+      const prevVal = already[slot];
       already[slot] = local.date;
+      const marked = JSON.stringify(already);
       const mark = await env.DB.prepare('UPDATE push_subs SET sent = ? WHERE endpoint = ? AND sent = ?')
-        .bind(JSON.stringify(already), row.endpoint, row.sent).run();
+        .bind(marked, row.endpoint, prevSent).run();
       if (mark.meta.changes !== 1) break;
-      row.sent = JSON.stringify(already);
-      const res = await sendPush(env, row, {
-        ...SLOT_TEXT[slot], tag: `motra-${slot}`, url: `./?slot=${slot}&date=${local.date}#heute`,
-      });
+      row.sent = marked;
+      attempts++;
+      let res;
+      try {
+        res = await sendPush(env, row, {
+          ...SLOT_TEXT[slot], tag: `motra-${slot}`, url: `./?slot=${slot}&date=${local.date}#heute`,
+        });
+      } catch (e) {
+        // A row that can't be encrypted for (e.g. broken key) must not stop everyone else's reminders.
+        console.error('push failed', e);
+        await env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ?').bind(row.endpoint).run();
+        break;
+      }
       if (res.gone) break; // subscription expired and was removed
-      if (res.ok) sent++;
+      if (res.ok) { sent++; continue; }
+      if (res.status === 0 || res.status === 429 || res.status >= 500) {
+        // Temporary problem at the push service: undo the mark so a later run in the window retries.
+        if (prevVal === undefined) delete already[slot]; else already[slot] = prevVal;
+        const undo = await env.DB.prepare('UPDATE push_subs SET sent = ? WHERE endpoint = ? AND sent = ?')
+          .bind(prevSent, row.endpoint, marked).run();
+        if (undo.meta.changes !== 1) break;
+        row.sent = prevSent;
+      }
     }
   }
   return sent;

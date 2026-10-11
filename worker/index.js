@@ -8,7 +8,7 @@
 //   DATA_KEY        base64 of 32 random bytes, encrypts data and 2FA secrets at rest
 //   SETUP_CODE      one-time code needed to set the very first password of an account
 
-import { PUSH_SCHEMA, PushError, pushKey, pushSubscribe, pushResubscribe, pushUnsubscribe, pushDone, pushTest, runReminders } from './push.js';
+import { PUSH_SCHEMA, PushError, pushKey, pushSubscribe, subscriptionExists, pushResubscribe, pushUnsubscribe, pushDone, pushTest, runReminders } from './push.js';
 
 const SESSION_DAYS = 90;
 const PENDING_MINUTES = 15;
@@ -130,7 +130,14 @@ async function handlePush(request, env, url, route) {
   const testHosts = (env.PUSH_TEST_HOSTS || '').split(',').map(s => s.trim()).filter(Boolean);
   switch (route) {
     case 'GET /api/push/key': return json(await pushKey(env));
-    case 'POST /api/push/subscribe': return json(await pushSubscribe(env, await body(request), url.origin, testHosts));
+    case 'POST /api/push/subscribe': {
+      const data = await body(request);
+      // New devices are rate-limited per network address; updates of known ones are not.
+      if (!(await subscriptionExists(env, data, testHosts))) await attempt(env, `pushsub:${clientIp(request)}`);
+      // Logged in to sync? Then this device shares "already entered" with the account's other devices.
+      const s = configured(env) ? await currentSession(request, env, { touch: false }) : null;
+      return json(await pushSubscribe(env, data, url.origin, testHosts, s?.stage === 'full' ? s.email : null));
+    }
     case 'POST /api/push/resubscribe': return json(await pushResubscribe(env, await body(request), testHosts));
     case 'POST /api/push/unsubscribe': return json(await pushUnsubscribe(env, await body(request), testHosts));
     case 'POST /api/push/done': return json(await pushDone(env, await body(request), testHosts));
