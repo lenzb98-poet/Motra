@@ -419,3 +419,77 @@ export function medLegend(el, show = 'all') {
   );
 }
 
+
+/* ---------------- mood + other things ("Anderes") ---------------- */
+
+export function momentsChart(container, { from, to }) {
+  const moments = store.getState().moments.filter(m => m.date >= from && m.date <= to);
+  const width = Math.max(280, container.clientWidth);
+  const total = diffDays(from, to) + 1;
+  const hasMood = store.rangeStats(from, to).count > 0;
+  if (!moments.length && !hasMood) return emptyState(container, 'Sobald du Stimmung und etwas unter „Anderes“ eingetragen hast, siehst du hier beides zusammen.');
+
+  const M = { top: 12, right: 14, left: 30 };
+  const plotH = 170;
+  const rowY = M.top + plotH + 22;   // row of markers below the plot
+  const axisY = rowY + 26;
+  const H = axisY + (total <= 10 ? 22 : 8);
+  const left = M.left, right = width - M.right, plotW = right - left;
+  const x = scaleX(from, to, left, plotW);
+  const y = scaleY(M.top, plotH);
+  const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
+  yAxis(svg, y, left, right);
+
+  // one marker per day with something entered; a hairline up into the plot
+  const byDay = new Map();
+  for (const m of moments) byDay.set(m.date, [...(byDay.get(m.date) ?? []), m]);
+  const marks = s('g', { class: 'moments' });
+  for (const [date, list] of byDay) {
+    const px = x(date);
+    marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: rowY - 6, class: 'moment-line' }));
+    marks.append(s('circle', { cx: px, cy: rowY, r: list.length > 1 ? 5 : 4, class: 'moment-dot' }));
+  }
+  svg.append(marks);
+  svg.append(s('line', { x1: left, x2: right, y1: rowY, y2: rowY, class: 'lane-track' }));
+
+  const dotG = s('g');
+  const trendPts = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const v = store.dayAverage(d);
+    if (v != null) dotG.append(s('circle', { cx: x(d), cy: y(v), r: total > 120 ? 2 : 2.8, class: 'avg-dot' }));
+    const t = store.trend(d);
+    if (t != null) trendPts.push({ date: d, value: t });
+  }
+  svg.append(dotG);
+  for (const run of runs(trendPts, 1)) svg.append(s('path', { d: smoothPath(run.map(p => [x(p.date), y(p.value)])), class: 'line-trend' }));
+  if (!hasMood) svg.append(s('text', { x: left + plotW / 2, y: M.top + plotH / 2, class: 'tick', 'text-anchor': 'middle' }, 'Keine Stimmungseinträge in diesem Zeitraum'));
+
+  xAxis(svg, dateTicks(from, to, x), axisY);
+  attachHover(svg, {
+    from, to, left, width: plotW, top: M.top, bottom: rowY + 10, x,
+    label: `Stimmung und andere Einträge vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
+    describe: date => {
+      const box = h('div', null, tipHead(date));
+      const avg = store.dayAverage(date);
+      const t = store.trend(date);
+      if (avg == null) box.append(h('div', { class: 'tip-empty' }, 'Kein Stimmungseintrag'));
+      else box.append(tipRow(h('span', { class: 'key-dot neutral' }), num1(avg), 'Tagesdurchschnitt'));
+      if (t != null) box.append(tipRow(keyLine('trend'), num1(t), '7-Tage-Schnitt'));
+      const list = byDay.get(date);
+      if (list) {
+        box.append(h('div', { class: 'tip-sep' }));
+        for (const m of list) box.append(h('div', { class: 'tip-moment' }, m.title));
+      }
+      return box;
+    },
+  });
+  container.replaceChildren(svg);
+}
+
+export function momentsLegend(el) {
+  el.replaceChildren(
+    h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
+    h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
+    h('span', { class: 'legend-item' }, h('span', { class: 'key-dot moment' }), 'Tag mit Eintrag'),
+  );
+}

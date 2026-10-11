@@ -128,9 +128,13 @@
       <section class="view" id="view-medis" data-view="medis" aria-labelledby="h-medis" hidden>
         <div class="view-head">
           <h1 id="h-medis" class="display">Medikamente &amp; Therapien</h1>
-          <div class="segmented" role="radiogroup" aria-label="Anzeigen" id="kind-filter"></div>
+          <div class="view-switch">
+            <div class="segmented" role="radiogroup" aria-label="Anzeigen" id="kind-filter"></div>
+            <button type="button" class="other-toggle" id="other-toggle" aria-pressed="false">Anderes</button>
+          </div>
         </div>
 
+        <div class="view-part" id="medis-main">
         <!-- The list folds away so the charts are visible at a glance -->
         <details class="card med-details" id="med-details">
           <summary class="med-summary">
@@ -178,6 +182,57 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"/></svg>
           <p>Diese Auswertung zeigt, wie Stimmung und Behandlung zeitlich zusammenfallen. Sie zeigt keine Ursachen: Schlaf, Stress, Jahreszeit und vieles mehr wirken mit, und viele Medikamente und Therapien brauchen mehrere Wochen bis zur vollen Wirkung. Nimm die Grafiken als Gesprächsgrundlage für deinen Arzt- oder Therapietermin. Ändere Medikamente nie ohne ärztliche Rücksprache.</p>
         </aside>
+        </div>
+
+        <!-- "Anderes": routines and moments that made a difference, kept apart from treatment -->
+        <div class="view-part" id="other-main" hidden>
+          <form class="card other-form" id="other-form" autocomplete="off">
+            <h2 class="h2">Was hast du gemacht oder erlebt?</h2>
+            <div class="other-quick" id="other-quick"></div>
+            <div class="field">
+              <label for="other-title">Eintrag</label>
+              <input type="text" id="other-title" maxlength="80" placeholder="z. B. Morgenroutine, Spaziergang, gutes Gespräch" required>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="other-date">Tag</label>
+                <input type="date" id="other-date" required>
+              </div>
+              <div class="field">
+                <label for="other-note">Notiz <span class="optional">optional</span></label>
+                <input type="text" id="other-note" maxlength="500" placeholder="Was war besonders?">
+              </div>
+            </div>
+            <p class="form-error" id="other-error" hidden></p>
+            <div class="form-actions"><button type="submit" class="btn primary">Eintragen</button></div>
+          </form>
+
+          <section class="card chart-card" aria-labelledby="h-other-chart">
+            <div class="card-head stack">
+              <h2 id="h-other-chart" class="h2">Stimmung &amp; Anderes</h2>
+              <div class="segmented small" role="radiogroup" aria-label="Zeitraum" id="range-other"></div>
+            </div>
+            <div class="legend" id="other-chart-legend"></div>
+            <div class="chart" id="other-chart"></div>
+          </section>
+
+          <section class="card" aria-labelledby="h-other-effect">
+            <div class="card-head">
+              <h2 id="h-other-effect" class="h2">Wirkung</h2>
+              <p class="card-meta">Wiederkehrendes: Ø Stimmung an Tagen mit und ohne, im gewählten Zeitraum. Einzelne Momente: der Tag im Vergleich zur Woche davor und danach.</p>
+            </div>
+            <div id="other-effect" class="compare"></div>
+          </section>
+
+          <section class="card" aria-labelledby="h-other-list">
+            <div class="card-head">
+              <h2 id="h-other-list" class="h2">Chronik</h2>
+              <p class="card-meta">Tippe auf einen Eintrag, um ihn zu ändern</p>
+            </div>
+            <div id="other-list" class="other-list"></div>
+            <button type="button" class="btn ghost wide" id="btn-more-other" hidden>Ältere anzeigen</button>
+          </section>
+        </div>
       </section>
     </main>
 

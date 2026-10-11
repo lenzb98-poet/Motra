@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import * as sync from './sync.js';
 import * as push from './push.js';
-import { moodChart, moodLegend, medChart, medLegend, eventText } from './charts.js';
+import { moodChart, moodLegend, medChart, medLegend, eventText, momentsChart, momentsLegend } from './charts.js';
 import {
   h, s, icon, todayKey, addDays, diffDays, formatLong, formatDayMonth, formatShort, formatWeekday,
   relativeDay, num1, signed1,
@@ -13,7 +13,7 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { rangeVerlauf: '30', rangeMedis: '90', kindFilter: 'all', medListOpen: null };
+let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
@@ -632,11 +632,21 @@ const kindOf = m => (m.kind === 'therapy' ? 'therapy' : 'med');
 const shownMeds = () => store.getState().meds.filter(m => prefs.kindFilter === 'all' || kindOf(m) === prefs.kindFilter);
 
 function renderMedis() {
+  // "Anderes" is its own area next to the switch, not part of "Alle".
+  const other = prefs.kindFilter === 'other';
+  $('#medis-main').hidden = other;
+  $('#other-main').hidden = !other;
+  $('#h-medis').textContent = other ? 'Anderes' : 'Medikamente & Therapien';
+  const toggle = $('#other-toggle');
+  toggle.setAttribute('aria-pressed', String(other));
+  toggle.classList.toggle('active', other);
+
   const filter = KIND_FILTERS.find(f => f.id === prefs.kindFilter) ?? KIND_FILTERS[0];
   $('#kind-filter').replaceChildren(...KIND_FILTERS.map(f => h('button', {
-    type: 'button', role: 'radio', 'aria-checked': String(f.id === filter.id),
-    onclick: () => { prefs.kindFilter = f.id; savePrefs(); renderMedis(); },
+    type: 'button', role: 'radio', 'aria-checked': String(!other && f.id === filter.id),
+    onclick: () => { prefs.kindFilter = f.id; prefs.lastKind = f.id; savePrefs(); renderMedis(); },
   }, f.label)));
+  if (other) { renderOther(); return; }
 
   const meds = shownMeds();
   const groups = ['med', 'therapy'].map(kind => ({ kind, items: meds.filter(m => kindOf(m) === kind) })).filter(g => g.items.length);
@@ -723,6 +733,102 @@ function renderEvents() {
         h('div', { class: 'event-title' }, h('span', { class: 'med-swatch', style: { background: `var(--c${ev.med.color + 1})` } }), eventText(ev)),
         h('p', { class: 'event-body' }, ...body)));
   }));
+}
+
+/* ================= ANDERES ================= */
+
+let otherShown = 20;
+
+function renderOther() {
+  const today = todayKey();
+  const dateInput = $('#other-date');
+  dateInput.max = today;
+  if (!dateInput.value || dateInput.value > today) dateInput.value = today;
+
+  // Quick buttons: what you've entered before, most frequent first.
+  const titles = store.momentTitles();
+  const title = $('#other-title');
+  $('#other-quick').replaceChildren(...titles.slice(0, 8).map(tt => h('button', {
+    type: 'button', class: `quick-chip${title.value.trim().toLowerCase() === tt.title.toLowerCase() ? ' on' : ''}`,
+    onclick: () => { title.value = tt.title; renderOther(); $('#other-note').focus(); },
+  }, tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
+  $('#other-quick').hidden = !titles.length;
+
+  segmented($('#range-other'), prefs.rangeOther, id => { prefs.rangeOther = id; savePrefs(); renderOther(); });
+  const { from, to } = rangeBounds(prefs.rangeOther);
+  momentsLegend($('#other-chart-legend'));
+  momentsChart($('#other-chart'), { from, to });
+  renderOtherEffect(from, to, titles);
+  renderOtherList();
+}
+
+function renderOtherEffect(from, to, titles) {
+  const el = $('#other-effect');
+  const moments = store.getState().moments;
+  if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Trag ein, was du gemacht oder erlebt hast. Hier siehst du dann, wie deine Stimmung an diesen Tagen war.')); return; }
+  const blocks = [];
+  // Recurring things (entered at least twice).
+  for (const tt of titles.filter(x => x.n >= 2)) {
+    const c = store.momentComparison(tt.title, from, to);
+    if (!c.with.days && !c.without.days) continue;
+    const row = (label, data, cls) => h('div', { class: 'hbar' },
+      h('span', { class: 'hbar-label' }, label),
+      h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%` } }) : null),
+      h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
+    let hint;
+    if (c.with.days < 3) hint = 'Zu wenige Tage mit Stimmungseintrag im Zeitraum.';
+    else if (c.without.days < 3) hint = 'Kaum Vergleichstage ohne diesen Eintrag im Zeitraum.';
+    else hint = h('span', null, 'Unterschied ', deltaEl(c.with.avg - c.without.avg), ' an Tagen damit.');
+    blocks.push(h('div', { class: 'compare-block' },
+      h('h3', null, h('span', { class: 'med-swatch moment' }), tt.title, h('span', { class: 'kind-tag' }, `${tt.n}×`)),
+      h('div', { class: 'compare-rows' }, row('Mit', c.with, 'with moment'), row('Ohne', c.without, 'without')),
+      h('p', { class: 'compare-hint' }, hint)));
+  }
+  // Single moments in the range.
+  const singles = moments.filter(m => m.date >= from && m.date <= to && (titles.find(x => x.title.toLowerCase() === m.title.toLowerCase())?.n ?? 0) < 2)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  for (const m of singles) {
+    const w = store.momentWindow(m.date);
+    const body = w.day == null
+      ? [h('span', null, 'Kein Stimmungseintrag an diesem Tag.')]
+      : [h('span', { class: 'vals' }, [w.before.avg != null ? `Woche davor Ø ${num1(w.before.avg)}` : null, `an dem Tag Ø ${num1(w.day)}`, w.after.avg != null ? `Woche danach Ø ${num1(w.after.avg)}` : null].filter(Boolean).join(' · ')),
+        w.before.avg != null && w.after.avg != null ? deltaEl(w.after.avg - w.before.avg) : null];
+    blocks.push(h('div', { class: 'event' },
+      h('div', { class: 'event-date' }, formatShort(m.date)),
+      h('div', null, h('div', { class: 'event-title' }, h('span', { class: 'med-swatch moment' }), m.title),
+        h('p', { class: 'event-body' }, ...body.filter(Boolean)))));
+  }
+  el.replaceChildren(...(blocks.length ? blocks : [h('p', { class: 'empty-text' }, 'Im gewählten Zeitraum gibt es noch nichts auszuwerten.')]));
+}
+
+function renderOtherList() {
+  const moments = [...store.getState().moments].sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt));
+  const el = $('#other-list');
+  if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Noch nichts eingetragen.')); $('#btn-more-other').hidden = true; return; }
+  el.replaceChildren(...moments.slice(0, otherShown).map(m => h('button', { type: 'button', class: 'other-row', onclick: () => editMomentSheet(m) },
+    h('span', { class: 'other-date' }, relativeDay(m.date)),
+    h('span', { class: 'other-main' }, h('span', { class: 'other-title' }, m.title), m.note ? h('span', { class: 'other-note' }, m.note) : null),
+    store.dayAverage(m.date) != null ? h('span', { class: 'other-mood', style: { background: store.moodColor(Math.round(store.dayAverage(m.date) * 10) / 10) } }, num1(store.dayAverage(m.date))) : null)));
+  $('#btn-more-other').hidden = moments.length <= otherShown;
+}
+
+function editMomentSheet(m) {
+  const title = h('input', { id: 'edit-other-title', type: 'text', value: m.title, maxlength: 80, required: true, autocomplete: 'off' });
+  const date = h('input', { id: 'edit-other-date', type: 'date', value: m.date, max: todayKey(), required: true });
+  const note = h('input', { id: 'edit-other-note', type: 'text', value: m.note, maxlength: 500, autocomplete: 'off' });
+  const err = h('p', { class: 'form-error', hidden: true });
+  openSheet('Eintrag bearbeiten', h('form', { class: 'sheet-body', onsubmit: e => {
+    e.preventDefault();
+    if (!title.value.trim()) { err.textContent = 'Bitte beschreibe kurz, was du gemacht oder erlebt hast.'; err.hidden = false; return; }
+    if (!date.value || date.value > todayKey()) { err.textContent = 'Bitte wähle einen Tag bis heute.'; err.hidden = false; return; }
+    store.updateMoment(m.id, { date: date.value, title: title.value, note: note.value });
+    closeSheet();
+    toast('Änderung gespeichert');
+  } },
+  field('Eintrag', title), field('Tag', date), field('Notiz', note), err,
+  h('div', { class: 'sheet-actions' },
+    armedButton('Löschen', 'Wirklich löschen? Nochmal tippen', () => { store.deleteMoment(m.id); closeSheet(); toast('Eintrag gelöscht'); }),
+    h('button', { type: 'submit', class: 'btn primary' }, 'Speichern'))));
 }
 
 /* ---------- medication sheets ---------- */
@@ -904,6 +1010,7 @@ function settingsSheet() {
     h('dl', { class: 'info-list' },
       h('dt', null, 'Einträge'), h('dd', null, String(st.entries.length)),
       h('dt', null, 'Medikamente & Therapien'), h('dd', null, String(st.meds.length)),
+      h('dt', null, 'Anderes'), h('dd', null, String(st.moments.length)),
       h('dt', null, 'Letzte Sicherung'), h('dd', null, last ? formatShort(last.slice(0, 10)) : 'noch nie')),
 
     remindersSection(),
@@ -983,6 +1090,27 @@ function confirmImport(text) {
 
 $('#btn-settings').addEventListener('click', settingsSheet);
 $('#btn-add-med').addEventListener('click', () => addMedSheet(prefs.kindFilter === 'therapy' ? 'therapy' : 'med'));
+$('#other-toggle').addEventListener('click', () => {
+  prefs.kindFilter = prefs.kindFilter === 'other' ? (prefs.lastKind || 'all') : 'other';
+  savePrefs();
+  renderMedis();
+});
+$('#other-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const title = $('#other-title'), date = $('#other-date'), note = $('#other-note'), err = $('#other-error');
+  err.hidden = true;
+  if (!title.value.trim()) { err.textContent = 'Bitte beschreibe kurz, was du gemacht oder erlebt hast.'; err.hidden = false; return; }
+  if (!date.value || date.value > todayKey()) { err.textContent = 'Bitte wähle einen Tag bis heute.'; err.hidden = false; return; }
+  const entry = { date: date.value, title: title.value, note: note.value };
+  title.value = ''; note.value = '';
+  store.addMoment(entry);
+  toast(`${entry.title.trim()} eingetragen`);
+});
+$('#other-title').addEventListener('input', () => {
+  const v = $('#other-title').value.trim().toLowerCase();
+  document.querySelectorAll('#other-quick .quick-chip').forEach(b => b.classList.toggle('on', b.firstChild.textContent.toLowerCase() === v));
+});
+$('#btn-more-other').addEventListener('click', () => { otherShown += 30; renderOtherList(); });
 $('#med-details').addEventListener('toggle', e => {
   if (autoToggle) { autoToggle = false; return; }
   if (prefs.medListOpen !== e.target.open) { prefs.medListOpen = e.target.open; savePrefs(); }

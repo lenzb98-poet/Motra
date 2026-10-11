@@ -46,7 +46,7 @@ export function currentSlot(date = new Date()) {
 /* ---------------- state & persistence ---------------- */
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
-const blank = () => ({ version: 1, entries: [], meds: [], deleted: { entries: {}, meds: {} }, settings: { lastBackup: null } });
+const blank = () => ({ version: 1, entries: [], meds: [], moments: [], deleted: { entries: {}, meds: {}, moments: {} }, settings: { lastBackup: null } });
 const entryKey = e => `${e.date}|${e.slot}`;
 const now = () => new Date().toISOString();
 // Every change to a medication bumps its timestamp; sync keeps the newer copy.
@@ -146,10 +146,32 @@ export function normalize(data) {
     version: 1,
     entries,
     meds,
-    deleted: { entries: cleanStamps(data.deleted?.entries), meds: cleanStamps(data.deleted?.meds) },
+    moments: normalizeMoments(data.moments),
+    deleted: { entries: cleanStamps(data.deleted?.entries), meds: cleanStamps(data.deleted?.meds), moments: cleanStamps(data.deleted?.moments) },
     settings: { lastBackup: typeof data.settings?.lastBackup === 'string' ? data.settings.lastBackup : null },
   };
 }
+
+// "Anderes": things done or experienced on a day (a routine, a moment that made a difference).
+function normalizeMoments(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const m of list) {
+    if (!m || !DATE_RE.test(m.date) || typeof m.title !== 'string' || !m.title.trim()) continue;
+    const id = typeof m.id === 'string' ? m.id : uid();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id, date: m.date, title: m.title.trim().slice(0, 80),
+      note: typeof m.note === 'string' ? m.note.slice(0, 500) : '',
+      updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : EPOCH,
+      ...(m.demo ? { demo: true } : {}),
+    });
+  }
+  return out.sort(byMoment);
+}
+const byMoment = (a, b) => a.date.localeCompare(b.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 // Deletion markers: { key: ISO time }. Kept so a deletion also reaches other devices.
 function cleanStamps(obj) {
@@ -184,6 +206,65 @@ export function deleteEntry(date, slot) {
   if (e && !e.demo) state.deleted.entries[entryKey(e)] = now();
   state.entries = state.entries.filter(x => x !== e);
   commit();
+}
+
+/* ---------------- other things (moments, routines) ---------------- */
+
+export function addMoment({ date, title, note = '' }) {
+  state.moments.push({ id: uid(), date, title: title.trim().slice(0, 80), note: note.trim().slice(0, 500), updatedAt: now() });
+  state.moments.sort(byMoment);
+  commit();
+}
+
+export function updateMoment(id, { date, title, note }) {
+  const m = state.moments.find(x => x.id === id);
+  if (!m) return;
+  Object.assign(m, { date, title: title.trim().slice(0, 80), note: note.trim().slice(0, 500), updatedAt: now() });
+  delete m.demo;
+  state.moments.sort(byMoment);
+  commit();
+}
+
+export function deleteMoment(id) {
+  const m = state.moments.find(x => x.id === id);
+  if (m && !m.demo) state.deleted.moments[id] = now();
+  state.moments = state.moments.filter(x => x.id !== id);
+  commit();
+}
+
+// Titles used so far, most frequent first (for the quick buttons).
+export function momentTitles() {
+  const counts = new Map();
+  for (const m of state.moments) {
+    const key = m.title.toLowerCase();
+    const cur = counts.get(key) ?? { title: m.title, n: 0, last: '' };
+    cur.n++;
+    if (m.date >= cur.last) { cur.last = m.date; cur.title = m.title; }
+    counts.set(key, cur);
+  }
+  return [...counts.values()].sort((a, b) => b.n - a.n || b.last.localeCompare(a.last));
+}
+
+// Mood on days with this title vs. days without, within a range (days that have mood entries only).
+export function momentComparison(title, from, to) {
+  const key = title.toLowerCase();
+  const dates = new Set(state.moments.filter(m => m.title.toLowerCase() === key).map(m => m.date));
+  const withV = [], withoutV = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const v = dayAverage(d);
+    if (v == null) continue;
+    (dates.has(d) ? withV : withoutV).push(v);
+  }
+  return { with: { avg: mean(withV), days: withV.length }, without: { avg: mean(withoutV), days: withoutV.length }, total: dates.size };
+}
+
+// A single moment: mood that day compared with the week before and after.
+export function momentWindow(date) {
+  return {
+    day: dayAverage(date),
+    before: windowAverage(addDays(date, -7), addDays(date, -1)),
+    after: windowAverage(addDays(date, 1), minKey(addDays(date, 7), todayKey())),
+  };
 }
 
 /* ---------------- medications ---------------- */
@@ -386,6 +467,7 @@ export function canonicalOf(data) {
 }
 
 const projectEntry = ({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt });
+const projectMoment = ({ id, date, title, note, updatedAt }) => ({ id, date, title, note, updatedAt });
 const projectMed = ({ id, name, kind, color, updatedAt, phases }) => ({
   id, name, kind: kind === 'therapy' ? 'therapy' : 'med', color, updatedAt,
   phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
@@ -396,7 +478,10 @@ function canonical(src) {
     version: 1,
     entries: src.entries.filter(e => !e.demo).map(projectEntry).sort(byEntryKey),
     meds: src.meds.filter(m => !m.demo).map(projectMed).sort(byId),
-    deleted: { entries: sortedStamps(src.deleted.entries), meds: sortedStamps(src.deleted.meds) },
+    moments: (src.moments ?? []).filter(m => !m.demo).map(projectMoment).sort(byId),
+    deleted: {
+      entries: sortedStamps(src.deleted.entries), meds: sortedStamps(src.deleted.meds), moments: sortedStamps(src.deleted.moments ?? {}),
+    },
   };
 }
 
@@ -416,7 +501,11 @@ export function mergeRemote(remoteData) {
     for (const k of Object.keys(out)) if (out[k] < cutoff) delete out[k];
     return out;
   };
-  const deleted = { entries: mergeStamps(state.deleted.entries, r.deleted.entries), meds: mergeStamps(state.deleted.meds, r.deleted.meds) };
+  const deleted = {
+    entries: mergeStamps(state.deleted.entries, r.deleted.entries),
+    meds: mergeStamps(state.deleted.meds, r.deleted.meds),
+    moments: mergeStamps(state.deleted.moments, r.deleted.moments),
+  };
 
   // Newer copy wins. On equal timestamps both devices must still pick the same copy,
   // so the tie is broken by content; otherwise they'd overwrite each other forever.
@@ -433,7 +522,14 @@ export function mergeRemote(remoteData) {
     if (!cur || wins(m, cur, projectMed)) meds.set(m.id, m);
   }
 
+  const moments = new Map(state.moments.map(m => [m.id, m]));
+  for (const m of r.moments) {
+    const cur = moments.get(m.id);
+    if (!cur || wins(m, cur, projectMoment)) moments.set(m.id, m);
+  }
+
   state.entries = [...entries.values()].filter(e => e.demo || !(deleted.entries[entryKey(e)] >= e.updatedAt)).sort(byEntryKey);
+  state.moments = [...moments.values()].filter(m => m.demo || !(deleted.moments[m.id] >= m.updatedAt)).sort(byMoment);
   state.meds = [...meds.values()].filter(m => m.demo || !(deleted.meds[m.id] >= m.updatedAt));
   state.deleted = deleted;
 
@@ -461,7 +557,7 @@ export function importJSON(text) {
   next.settings.lastBackup = new Date().toISOString();
   state = next;
   commit();
-  return { entries: next.entries.length, meds: next.meds.length };
+  return { entries: next.entries.length, meds: next.meds.length, moments: next.moments.length };
 }
 
 export function exportCSV() {
@@ -469,14 +565,15 @@ export function exportCSV() {
     const str = String(v ?? '');
     return /[";\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
   };
-  const rows = [['Datum', 'Wochentag', 'Tageszeit', 'Stimmung (1-5)', 'Stimmung', 'Notiz', 'Medikamente & Therapien']];
+  const rows = [['Datum', 'Wochentag', 'Tageszeit', 'Stimmung (1-5)', 'Stimmung', 'Notiz', 'Medikamente & Therapien', 'Anderes']];
   for (const e of state.entries) {
     const meds = state.meds
       .map(m => [m, activePhase(m, e.date)])
       .filter(([, p]) => p)
       .map(([m, p]) => (p.dose ? `${m.name} ${p.dose}` : m.name))
       .join(', ');
-    rows.push([e.date, formatWeekday(e.date), slotLabel(e.slot), formatMood(e.mood), describeMood(e.mood), e.note, meds]);
+    const other = state.moments.filter(m => m.date === e.date).map(m => m.title).join(', ');
+    rows.push([e.date, formatWeekday(e.date), slotLabel(e.slot), formatMood(e.mood), describeMood(e.mood), e.note, meds, other]);
   }
   return '﻿' + rows.map(r => r.map(esc).join(';')).join('\r\n');
 }
@@ -489,7 +586,7 @@ export function wipeAll() {
 
 /* ---------------- example data ---------------- */
 
-export const hasDemo = () => state.entries.some(e => e.demo) || state.meds.some(m => m.demo);
+export const hasDemo = () => state.entries.some(e => e.demo) || state.meds.some(m => m.demo) || state.moments.some(m => m.demo);
 
 export function loadDemo() {
   const today = todayKey();
@@ -532,11 +629,20 @@ export function loadDemo() {
     }
   }
   state.entries.sort((a, b) => a.date.localeCompare(b.date) || SLOT_IDS.indexOf(a.slot) - SLOT_IDS.indexOf(b.slot));
+  // Other things: a morning routine on many days, a few single moments.
+  const demoMoment = (date, title, note = '') => state.moments.push({ id: uid(), date, title, note, updatedAt: new Date().toISOString(), demo: true });
+  for (let n = 70; n >= 0; n--) if (rnd() < 0.45) demoMoment(d(n), 'Morgenroutine');
+  for (let n = 60; n >= 0; n -= 4) if (rnd() < 0.6) demoMoment(d(n), 'Spaziergang');
+  demoMoment(d(52), 'Gutes Gespräch mit Anna', 'Hat mir gezeigt, dass ich nicht allein bin.');
+  demoMoment(d(23), 'Wochenende am See');
+  demoMoment(d(9), 'Streit auf der Arbeit');
+  state.moments.sort(byMoment);
   commit();
 }
 
 export function removeDemo() {
   state.entries = state.entries.filter(e => !e.demo);
   state.meds = state.meds.filter(m => !m.demo);
+  state.moments = state.moments.filter(m => !m.demo);
   commit();
 }
