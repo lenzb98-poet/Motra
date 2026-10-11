@@ -152,7 +152,8 @@ export function normalize(data) {
   };
 }
 
-// "Anderes": things done or experienced on a day (a routine, a moment that made a difference).
+// "Anderes": things done or experienced. Either on one day (a routine, a moment that made a
+// difference) or over a period like a medication: { span: true, end: date | null } (null = still going).
 function normalizeMoments(list) {
   if (!Array.isArray(list)) return [];
   const seen = new Set();
@@ -162,8 +163,10 @@ function normalizeMoments(list) {
     const id = typeof m.id === 'string' ? m.id : uid();
     if (seen.has(id)) continue;
     seen.add(id);
+    const span = m.span === true;
     out.push({
       id, date: m.date, title: m.title.trim().slice(0, 80),
+      ...(span ? { span: true, end: DATE_RE.test(m.end) && m.end >= m.date ? m.end : null } : {}),
       note: typeof m.note === 'string' ? m.note.slice(0, 500) : '',
       updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : EPOCH,
       ...(m.demo ? { demo: true } : {}),
@@ -210,20 +213,40 @@ export function deleteEntry(date, slot) {
 
 /* ---------------- other things (moments, routines) ---------------- */
 
-export function addMoment({ date, title, note = '' }) {
-  state.moments.push({ id: uid(), date, title: title.trim().slice(0, 80), note: note.trim().slice(0, 500), updatedAt: now() });
+// span: false → one day; true → a period from `date` to `end` (null/'' = still going).
+const spanFields = (date, span, end) => (span ? { span: true, end: end && end >= date ? end : null } : {});
+
+export function addMoment({ date, title, note = '', span = false, end = null }) {
+  state.moments.push({ id: uid(), date, title: title.trim().slice(0, 80), ...spanFields(date, span, end), note: note.trim().slice(0, 500), updatedAt: now() });
   state.moments.sort(byMoment);
   commit();
 }
 
-export function updateMoment(id, { date, title, note }) {
+export function updateMoment(id, { date, title, note, span = false, end = null }) {
   const m = state.moments.find(x => x.id === id);
   if (!m) return;
-  Object.assign(m, { date, title: title.trim().slice(0, 80), note: note.trim().slice(0, 500), updatedAt: now() });
-  delete m.demo;
+  delete m.span; delete m.end; delete m.demo;
+  Object.assign(m, { date, title: title.trim().slice(0, 80), ...spanFields(date, span, end), note: note.trim().slice(0, 500), updatedAt: now() });
   state.moments.sort(byMoment);
   commit();
 }
+
+// End a running period on the given day.
+export function endMoment(id, end) {
+  const m = state.moments.find(x => x.id === id);
+  if (!m?.span) return;
+  m.end = end < m.date ? m.date : end;
+  m.updatedAt = now();
+  delete m.demo;
+  commit();
+}
+
+// Last day a moment counts for (a running period lasts until today; never before its start).
+export const momentLast = m => (!m.span ? m.date : m.end ?? maxKey(m.date, todayKey()));
+export const momentCovers = (m, d) => d >= m.date && d <= momentLast(m);
+export const momentRunning = m => !!m.span && m.date <= todayKey() && (m.end == null || m.end >= todayKey());
+// Moments that touch the range from–to.
+export const momentsIn = (from, to) => state.moments.filter(m => m.date <= to && momentLast(m) >= from);
 
 export function deleteMoment(id) {
   const m = state.moments.find(x => x.id === id);
@@ -248,14 +271,29 @@ export function momentTitles() {
 // Mood on days with this title vs. days without, within a range (days that have mood entries only).
 export function momentComparison(title, from, to) {
   const key = title.toLowerCase();
-  const dates = new Set(state.moments.filter(m => m.title.toLowerCase() === key).map(m => m.date));
+  const list = state.moments.filter(m => m.title.toLowerCase() === key);
   const withV = [], withoutV = [];
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const v = dayAverage(d);
     if (v == null) continue;
-    (dates.has(d) ? withV : withoutV).push(v);
+    (list.some(m => momentCovers(m, d)) ? withV : withoutV).push(v);
   }
-  return { with: { avg: mean(withV), days: withV.length }, without: { avg: mean(withoutV), days: withoutV.length }, total: dates.size };
+  return { with: { avg: mean(withV), days: withV.length }, without: { avg: mean(withoutV), days: withoutV.length }, total: list.length };
+}
+
+// A period: 4 weeks before it began, the time during it, and (once over) up to 4 weeks after.
+export function spanEffect(m) {
+  const today = todayKey();
+  const last = minKey(momentLast(m), today);
+  const ended = m.end != null && m.end < today;
+  return {
+    started: m.date <= today,
+    ended,
+    days: m.date <= today ? diffDays(m.date, last) + 1 : 0,
+    before: windowAverage(addDays(m.date, -28), addDays(m.date, -1)),
+    during: m.date <= today ? windowAverage(m.date, last) : { avg: null, days: 0 },
+    after: ended ? windowAverage(addDays(m.end, 1), minKey(addDays(m.end, 28), today)) : { avg: null, days: 0 },
+  };
 }
 
 // A single moment: mood that day compared with the week before and after.
@@ -467,7 +505,7 @@ export function canonicalOf(data) {
 }
 
 const projectEntry = ({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt });
-const projectMoment = ({ id, date, title, note, updatedAt }) => ({ id, date, title, note, updatedAt });
+const projectMoment = ({ id, date, title, span, end, note, updatedAt }) => ({ id, date, title, ...(span ? { span: true, end: end ?? null } : {}), note, updatedAt });
 const projectMed = ({ id, name, kind, color, updatedAt, phases }) => ({
   id, name, kind: kind === 'therapy' ? 'therapy' : 'med', color, updatedAt,
   phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
@@ -572,7 +610,7 @@ export function exportCSV() {
       .filter(([, p]) => p)
       .map(([m, p]) => (p.dose ? `${m.name} ${p.dose}` : m.name))
       .join(', ');
-    const other = state.moments.filter(m => m.date === e.date).map(m => m.title).join(', ');
+    const other = state.moments.filter(m => momentCovers(m, e.date)).map(m => m.title).join(', ');
     rows.push([e.date, formatWeekday(e.date), slotLabel(e.slot), formatMood(e.mood), describeMood(e.mood), e.note, meds, other]);
   }
   return '﻿' + rows.map(r => r.map(esc).join(';')).join('\r\n');
@@ -636,6 +674,8 @@ export function loadDemo() {
   demoMoment(d(52), 'Gutes Gespräch mit Anna', 'Hat mir gezeigt, dass ich nicht allein bin.');
   demoMoment(d(23), 'Wochenende am See');
   demoMoment(d(9), 'Streit auf der Arbeit');
+  state.moments.push({ id: uid(), date: d(48), title: 'Urlaub in Italien', span: true, end: d(36), note: '', updatedAt: new Date().toISOString(), demo: true });
+  state.moments.push({ id: uid(), date: d(20), title: 'Yogakurs', span: true, end: null, note: 'Dienstags und donnerstags', updatedAt: new Date().toISOString(), demo: true });
   state.moments.sort(byMoment);
   commit();
 }

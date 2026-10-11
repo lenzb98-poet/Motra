@@ -193,15 +193,20 @@
               <label for="other-title">Eintrag</label>
               <input type="text" id="other-title" maxlength="80" placeholder="z. B. Morgenroutine, Spaziergang, gutes Gespräch" required>
             </div>
+            <div class="segmented kind-switch" role="radiogroup" aria-label="Dauer" id="other-mode"></div>
             <div class="field-row">
               <div class="field">
-                <label for="other-date">Tag</label>
+                <label for="other-date" id="other-date-label">Tag</label>
                 <input type="date" id="other-date" required>
               </div>
-              <div class="field">
-                <label for="other-note">Notiz <span class="optional">optional</span></label>
-                <input type="text" id="other-note" maxlength="500" placeholder="Was war besonders?">
+              <div class="field" id="other-end-field" hidden>
+                <label for="other-end">Bis <span class="optional">leer = läuft noch</span></label>
+                <input type="date" id="other-end">
               </div>
+            </div>
+            <div class="field">
+              <label for="other-note">Notiz <span class="optional">optional</span></label>
+              <input type="text" id="other-note" maxlength="500" placeholder="Was war besonders?">
             </div>
             <p class="form-error" id="other-error" hidden></p>
             <div class="form-actions"><button type="submit" class="btn primary">Eintragen</button></div>
@@ -219,7 +224,7 @@
           <section class="card" aria-labelledby="h-other-effect">
             <div class="card-head">
               <h2 id="h-other-effect" class="h2">Wirkung</h2>
-              <p class="card-meta">Wiederkehrendes: Ø Stimmung an Tagen mit und ohne, im gewählten Zeitraum. Einzelne Momente: der Tag im Vergleich zur Woche davor und danach.</p>
+              <p class="card-meta">Wiederkehrendes: Ø Stimmung an Tagen mit und ohne, im gewählten Zeitraum. Einzelne Momente: der Tag im Vergleich zur Woche davor und danach. Zeiträume: die 4 Wochen davor, die Zeit währenddessen und die 4 Wochen danach.</p>
             </div>
             <div id="other-effect" class="compare"></div>
           </section>

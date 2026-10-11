@@ -738,19 +738,59 @@ function renderEvents() {
 /* ================= ANDERES ================= */
 
 let otherShown = 20;
+let otherSpan = false;   // form mode: one day or a period
+const MOMENT_MODES = [{ id: false, label: 'Ein Tag' }, { id: true, label: 'Zeitraum' }];
+const momentEndMax = () => addDays(todayKey(), 365);   // a period may have a planned end (holiday until Friday)
+
+// Validation shared by the form and the edit sheet. Returns an error text or ''.
+function momentError({ title, date, span, end }) {
+  if (!title.trim()) return 'Bitte beschreibe kurz, was du gemacht oder erlebt hast.';
+  if (!date || date > todayKey()) return span ? 'Bitte wähle einen Beginn bis heute.' : 'Bitte wähle einen Tag bis heute.';
+  if (span && end && end < date) return 'Das Ende kann nicht vor dem Beginn liegen.';
+  if (span && end && end > momentEndMax()) return 'Das Ende darf höchstens ein Jahr in der Zukunft liegen.';
+  return '';
+}
+
+// "12. Aug – 3. Sept", "seit 3.9.26", "ab 3.9.26 bis 20. Okt" …
+function momentDateLabel(m) {
+  if (!m.span) return relativeDay(m.date);
+  if (m.end == null) return `seit ${formatShort(m.date)}`;
+  if (m.end === m.date) return formatShort(m.date);
+  return `${formatDayMonth(m.date)} – ${formatDayMonth(m.end)}`;
+}
+
+// Switch between "Ein Tag" and "Zeitraum" in a form: labels and the end field follow.
+function momentModeSwitch(el, span, onChange) {
+  el.replaceChildren(...MOMENT_MODES.map(mode => h('button', {
+    type: 'button', role: 'radio', 'aria-checked': String(mode.id === span),
+    onclick: () => { if (mode.id !== span) onChange(mode.id); },
+  }, mode.label)));
+}
+
+function applyOtherMode() {
+  momentModeSwitch($('#other-mode'), otherSpan, span => { otherSpan = span; applyOtherMode(); });
+  $('#other-date-label').textContent = otherSpan ? 'Von' : 'Tag';
+  $('#other-end-field').hidden = !otherSpan;
+  const end = $('#other-end');
+  end.min = $('#other-date').value || '';
+  end.max = momentEndMax();
+}
 
 function renderOther() {
   const today = todayKey();
   const dateInput = $('#other-date');
   dateInput.max = today;
   if (!dateInput.value || dateInput.value > today) dateInput.value = today;
+  applyOtherMode();
 
   // Quick buttons: what you've entered before, most frequent first.
+  // Picking one also picks "Zeitraum" when it was last entered as a period.
   const titles = store.momentTitles();
   const title = $('#other-title');
+  const lastOf = key => [...store.getState().moments].reverse().find(m => m.title.toLowerCase() === key);
   $('#other-quick').replaceChildren(...titles.slice(0, 8).map(tt => h('button', {
     type: 'button', class: `quick-chip${title.value.trim().toLowerCase() === tt.title.toLowerCase() ? ' on' : ''}`,
-    onclick: () => { title.value = tt.title; renderOther(); $('#other-note').focus(); },
+    onclick: () => { title.value = tt.title; otherSpan = !!lastOf(tt.title.toLowerCase())?.span; renderOther(); $('#other-note').focus(); },
   }, tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
   $('#other-quick').hidden = !titles.length;
 
@@ -762,32 +802,46 @@ function renderOther() {
   renderOtherList();
 }
 
+const hbarRow = (label, data, cls) => h('div', { class: 'hbar' },
+  h('span', { class: 'hbar-label' }, label),
+  h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%` } }) : null),
+  h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
+
 function renderOtherEffect(from, to, titles) {
   const el = $('#other-effect');
   const moments = store.getState().moments;
   if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Trag ein, was du gemacht oder erlebt hast. Hier siehst du dann, wie deine Stimmung an diesen Tagen war.')); return; }
   const blocks = [];
-  // Recurring things (entered at least twice).
+  const count = m => titles.find(x => x.title.toLowerCase() === m.title.toLowerCase())?.n ?? 0;
+  // Recurring things (entered at least twice): days with vs. without, within the range.
   for (const tt of titles.filter(x => x.n >= 2)) {
     const c = store.momentComparison(tt.title, from, to);
     if (!c.with.days && !c.without.days) continue;
-    const row = (label, data, cls) => h('div', { class: 'hbar' },
-      h('span', { class: 'hbar-label' }, label),
-      h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%` } }) : null),
-      h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
     let hint;
     if (c.with.days < 3) hint = 'Zu wenige Tage mit Stimmungseintrag im Zeitraum.';
     else if (c.without.days < 3) hint = 'Kaum Vergleichstage ohne diesen Eintrag im Zeitraum.';
     else hint = h('span', null, 'Unterschied ', deltaEl(c.with.avg - c.without.avg), ' an Tagen damit.');
     blocks.push(h('div', { class: 'compare-block' },
       h('h3', null, h('span', { class: 'med-swatch moment' }), tt.title, h('span', { class: 'kind-tag' }, `${tt.n}×`)),
-      h('div', { class: 'compare-rows' }, row('Mit', c.with, 'with moment'), row('Ohne', c.without, 'without')),
+      h('div', { class: 'compare-rows' }, hbarRow('Mit', c.with, 'with moment'), hbarRow('Ohne', c.without, 'without')),
       h('p', { class: 'compare-hint' }, hint)));
   }
-  // Single moments in the range.
-  const singles = moments.filter(m => m.date >= from && m.date <= to && (titles.find(x => x.title.toLowerCase() === m.title.toLowerCase())?.n ?? 0) < 2)
-    .sort((a, b) => b.date.localeCompare(a.date));
-  for (const m of singles) {
+  // Single periods: 4 weeks before, during, and up to 4 weeks after (like a medication).
+  for (const m of store.momentsIn(from, to).filter(m => m.span && count(m) < 2).sort((a, b) => b.date.localeCompare(a.date))) {
+    const e = store.spanEffect(m);
+    const rows = [hbarRow('Davor', e.before, 'without'), hbarRow(e.ended ? 'Während' : 'Bisher', e.during, 'with moment')];
+    if (e.ended) rows.push(hbarRow('Danach', e.after, 'without'));
+    let hint;
+    if (e.before.days < 3) hint = 'Zu wenige Einträge in den 4 Wochen davor für einen Vergleich.';
+    else if (e.during.days < 3) hint = 'Noch zu wenige Tage mit Stimmungseintrag in diesem Zeitraum.';
+    else hint = h('span', null, e.ended ? 'Währenddessen ' : 'Bisher ', deltaEl(e.during.avg - e.before.avg), ' im Vergleich zu den 4 Wochen davor.');
+    blocks.push(h('div', { class: 'compare-block' },
+      h('h3', null, h('span', { class: 'med-swatch moment span' }), m.title, h('span', { class: 'kind-tag' }, momentDateLabel(m))),
+      h('div', { class: 'compare-rows' }, ...rows),
+      h('p', { class: 'compare-hint' }, hint)));
+  }
+  // Single days in the range: the day against the week before and after.
+  for (const m of moments.filter(m => !m.span && m.date >= from && m.date <= to && count(m) < 2).sort((a, b) => b.date.localeCompare(a.date))) {
     const w = store.momentWindow(m.date);
     const body = w.day == null
       ? [h('span', null, 'Kein Stimmungseintrag an diesem Tag.')]
@@ -801,31 +855,58 @@ function renderOtherEffect(from, to, titles) {
   el.replaceChildren(...(blocks.length ? blocks : [h('p', { class: 'empty-text' }, 'Im gewählten Zeitraum gibt es noch nichts auszuwerten.')]));
 }
 
+// Mood shown next to an entry: the day's average, or the average over a period so far.
+function momentMood(m) {
+  if (!m.span) return store.dayAverage(m.date);
+  if (m.date > todayKey()) return null;
+  const last = store.momentLast(m) < todayKey() ? store.momentLast(m) : todayKey();
+  return store.windowAverage(m.date, last).avg;
+}
+
 function renderOtherList() {
-  const moments = [...store.getState().moments].sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt));
+  // Running periods first, then everything by (end) date, newest first.
+  const sortKey = m => store.momentLast(m);
+  const moments = [...store.getState().moments].sort((a, b) =>
+    Number(store.momentRunning(b)) - Number(store.momentRunning(a)) || sortKey(b).localeCompare(sortKey(a)) || b.updatedAt.localeCompare(a.updatedAt));
   const el = $('#other-list');
   if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Noch nichts eingetragen.')); $('#btn-more-other').hidden = true; return; }
-  el.replaceChildren(...moments.slice(0, otherShown).map(m => h('button', { type: 'button', class: 'other-row', onclick: () => editMomentSheet(m) },
-    h('span', { class: 'other-date' }, relativeDay(m.date)),
-    h('span', { class: 'other-main' }, h('span', { class: 'other-title' }, m.title), m.note ? h('span', { class: 'other-note' }, m.note) : null),
-    store.dayAverage(m.date) != null ? h('span', { class: 'other-mood', style: { background: store.moodColor(Math.round(store.dayAverage(m.date) * 10) / 10) } }, num1(store.dayAverage(m.date))) : null)));
+  el.replaceChildren(...moments.slice(0, otherShown).map(m => {
+    const mood = momentMood(m);
+    return h('button', { type: 'button', class: `other-row${m.span ? ' span' : ''}`, onclick: () => editMomentSheet(m) },
+      h('span', { class: 'other-date' }, momentDateLabel(m)),
+      h('span', { class: 'other-main' },
+        h('span', { class: 'other-title' }, m.title, store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
+        m.note ? h('span', { class: 'other-note' }, m.note) : null),
+      mood != null ? h('span', { class: 'other-mood', title: m.span ? 'Ø Stimmung in diesem Zeitraum' : 'Ø Stimmung an diesem Tag', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
+  }));
   $('#btn-more-other').hidden = moments.length <= otherShown;
 }
 
-function editMomentSheet(m) {
+function editMomentSheet(m, span = !!m.span) {
   const title = h('input', { id: 'edit-other-title', type: 'text', value: m.title, maxlength: 80, required: true, autocomplete: 'off' });
   const date = h('input', { id: 'edit-other-date', type: 'date', value: m.date, max: todayKey(), required: true });
+  const end = h('input', { id: 'edit-other-end', type: 'date', value: m.span ? m.end ?? '' : '', min: m.date, max: momentEndMax() });
   const note = h('input', { id: 'edit-other-note', type: 'text', value: m.note, maxlength: 500, autocomplete: 'off' });
+  date.addEventListener('change', () => { end.min = date.value; });
   const err = h('p', { class: 'form-error', hidden: true });
+  // Switching keeps what was typed.
+  const modeSwitch = h('div', { class: 'segmented kind-switch', role: 'radiogroup', 'aria-label': 'Dauer' });
+  momentModeSwitch(modeSwitch, span, next => editMomentSheet({ ...m, title: title.value, date: date.value, note: note.value, span: next, end: end.value || null }, next));
+  const running = span && m.id && store.momentRunning(store.getState().moments.find(x => x.id === m.id) ?? {});
   openSheet('Eintrag bearbeiten', h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
-    if (!title.value.trim()) { err.textContent = 'Bitte beschreibe kurz, was du gemacht oder erlebt hast.'; err.hidden = false; return; }
-    if (!date.value || date.value > todayKey()) { err.textContent = 'Bitte wähle einen Tag bis heute.'; err.hidden = false; return; }
-    store.updateMoment(m.id, { date: date.value, title: title.value, note: note.value });
+    const values = { title: title.value, date: date.value, note: note.value, span, end: span ? end.value || null : null };
+    const msg = momentError(values);
+    if (msg) { err.textContent = msg; err.hidden = false; return; }
+    store.updateMoment(m.id, values);
     closeSheet();
     toast('Änderung gespeichert');
   } },
-  field('Eintrag', title), field('Tag', date), field('Notiz', note), err,
+  modeSwitch,
+  field('Eintrag', title),
+  span ? h('div', { class: 'field-row' }, field('Von', date), field('Bis (leer = läuft noch)', end)) : field('Tag', date),
+  field('Notiz', note), err,
+  running ? h('button', { type: 'button', class: 'btn', onclick: () => { store.endMoment(m.id, todayKey()); closeSheet(); toast(`${m.title} heute beendet`); } }, 'Heute beenden') : null,
   h('div', { class: 'sheet-actions' },
     armedButton('Löschen', 'Wirklich löschen? Nochmal tippen', () => { store.deleteMoment(m.id); closeSheet(); toast('Eintrag gelöscht'); }),
     h('button', { type: 'submit', class: 'btn primary' }, 'Speichern'))));
@@ -1097,12 +1178,12 @@ $('#other-toggle').addEventListener('click', () => {
 });
 $('#other-form').addEventListener('submit', e => {
   e.preventDefault();
-  const title = $('#other-title'), date = $('#other-date'), note = $('#other-note'), err = $('#other-error');
+  const title = $('#other-title'), date = $('#other-date'), end = $('#other-end'), note = $('#other-note'), err = $('#other-error');
   err.hidden = true;
-  if (!title.value.trim()) { err.textContent = 'Bitte beschreibe kurz, was du gemacht oder erlebt hast.'; err.hidden = false; return; }
-  if (!date.value || date.value > todayKey()) { err.textContent = 'Bitte wähle einen Tag bis heute.'; err.hidden = false; return; }
-  const entry = { date: date.value, title: title.value, note: note.value };
-  title.value = ''; note.value = '';
+  const entry = { date: date.value, title: title.value, note: note.value, span: otherSpan, end: otherSpan ? end.value || null : null };
+  const msg = momentError(entry);
+  if (msg) { err.textContent = msg; err.hidden = false; return; }
+  title.value = ''; note.value = ''; end.value = '';
   store.addMoment(entry);
   toast(`${entry.title.trim()} eingetragen`);
 });
@@ -1110,6 +1191,7 @@ $('#other-title').addEventListener('input', () => {
   const v = $('#other-title').value.trim().toLowerCase();
   document.querySelectorAll('#other-quick .quick-chip').forEach(b => b.classList.toggle('on', b.firstChild.textContent.toLowerCase() === v));
 });
+$('#other-date').addEventListener('change', () => { $('#other-end').min = $('#other-date').value; });
 $('#btn-more-other').addEventListener('click', () => { otherShown += 30; renderOtherList(); });
 $('#med-details').addEventListener('toggle', e => {
   if (autoToggle) { autoToggle = false; return; }

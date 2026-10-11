@@ -936,7 +936,7 @@ a.btn { text-decoration: none; }
 
 .other-list { display: flex; flex-direction: column; }
 .other-row {
-  display: grid; grid-template-columns: 84px 1fr auto; gap: 10px; align-items: start;
+  display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: start;
   padding: 11px 8px; margin: 0 -8px;
   border: 0; border-radius: 12px; background: transparent; text-align: left;
   width: calc(100% + 16px);
@@ -948,3 +948,14 @@ a.btn { text-decoration: none; }
 .other-title { font-size: 14.5px; font-weight: 600; }
 .other-note { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
 .other-mood { font-size: 12px; font-weight: 700; color: var(--on-accent); padding: 2px 8px; border-radius: 99px; font-variant-numeric: tabular-nums; }
+
+/* periods under "Anderes" */
+.key-bar.moment, .med-swatch.moment.span { background: var(--moment); }
+.med-swatch.moment.span { width: 18px; height: 8px; border-radius: 4px; }
+.moment-span { fill: var(--moment); opacity: .75; }
+.moment-span.running { opacity: 1; }
+.moment-band { fill: var(--moment); opacity: .06; pointer-events: none; }
+.tip-moment.span::before { width: 12px; height: 6px; border-radius: 3px; }
+.chip.running { margin-left: 8px; vertical-align: 2px; padding: 1px 7px; font-size: 11px; }
+.chip.running::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--moment); }
+.other-row.span .other-date { color: var(--text-2); }

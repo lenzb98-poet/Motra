@@ -423,7 +423,18 @@ export function medLegend(el, show = 'all') {
 /* ---------------- mood + other things ("Anderes") ---------------- */
 
 export function momentsChart(container, { from, to }) {
-  const moments = store.getState().moments.filter(m => m.date >= from && m.date <= to);
+  const moments = store.momentsIn(from, to);
+  const days = moments.filter(m => !m.span);
+  const spans = moments.filter(m => m.span);
+  // Periods get lanes like medications; overlapping ones are stacked.
+  const laneEnds = [];
+  const spanLane = new Map();
+  for (const m of spans) {
+    let lane = laneEnds.findIndex(end => end < m.date);
+    if (lane < 0) { lane = laneEnds.length; laneEnds.push(''); }
+    laneEnds[lane] = store.momentLast(m);
+    spanLane.set(m, lane);
+  }
   const width = Math.max(280, container.clientWidth);
   const total = diffDays(from, to) + 1;
   const hasMood = store.rangeStats(from, to).count > 0;
@@ -431,7 +442,9 @@ export function momentsChart(container, { from, to }) {
 
   const M = { top: 12, right: 14, left: 30 };
   const plotH = 170;
-  const rowY = M.top + plotH + 22;   // row of markers below the plot
+  const LANE = 12;
+  const spanTop = M.top + plotH + 18;               // lanes for periods below the plot
+  const rowY = spanTop + laneEnds.length * LANE + (laneEnds.length ? 10 : 4);   // row of day markers
   const axisY = rowY + 26;
   const H = axisY + (total <= 10 ? 22 : 8);
   const left = M.left, right = width - M.right, plotW = right - left;
@@ -442,8 +455,15 @@ export function momentsChart(container, { from, to }) {
 
   // one marker per day with something entered; a hairline up into the plot
   const byDay = new Map();
-  for (const m of moments) byDay.set(m.date, [...(byDay.get(m.date) ?? []), m]);
+  for (const m of days) byDay.set(m.date, [...(byDay.get(m.date) ?? []), m]);
   const marks = s('g', { class: 'moments' });
+  for (const m of spans) {
+    const a = x(m.date < from ? from : m.date) - 3;
+    const b = x(store.momentLast(m) > to ? to : store.momentLast(m)) + 3;
+    const top = spanTop + spanLane.get(m) * LANE;
+    marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band' }));
+    marks.append(s('rect', { x: a, y: top, width: Math.max(6, b - a), height: 8, rx: 4, class: `moment-span${store.momentRunning(m) ? ' running' : ''}` }));
+  }
   for (const [date, list] of byDay) {
     const px = x(date);
     marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: rowY - 6, class: 'moment-line' }));
@@ -475,10 +495,10 @@ export function momentsChart(container, { from, to }) {
       if (avg == null) box.append(h('div', { class: 'tip-empty' }, 'Kein Stimmungseintrag'));
       else box.append(tipRow(h('span', { class: 'key-dot neutral' }), num1(avg), 'Tagesdurchschnitt'));
       if (t != null) box.append(tipRow(keyLine('trend'), num1(t), '7-Tage-Schnitt'));
-      const list = byDay.get(date);
-      if (list) {
+      const list = moments.filter(m => store.momentCovers(m, date));
+      if (list.length) {
         box.append(h('div', { class: 'tip-sep' }));
-        for (const m of list) box.append(h('div', { class: 'tip-moment' }, m.title));
+        for (const m of list) box.append(h('div', { class: `tip-moment${m.span ? ' span' : ''}` }, m.title));
       }
       return box;
     },
@@ -487,9 +507,10 @@ export function momentsChart(container, { from, to }) {
 }
 
 export function momentsLegend(el) {
-  el.replaceChildren(
+  el.replaceChildren(...[
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
-    h('span', { class: 'legend-item' }, h('span', { class: 'key-dot moment' }), 'Tag mit Eintrag'),
-  );
+    h('span', { class: 'legend-item' }, h('span', { class: 'key-dot moment' }), 'Einzelner Tag'),
+    store.getState().moments.some(m => m.span) ? h('span', { class: 'legend-item' }, h('span', { class: 'key-bar moment' }), 'Zeitraum') : null,
+  ].filter(Boolean));
 }
