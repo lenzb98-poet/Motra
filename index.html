@@ -79,6 +79,25 @@
           </div>
         </form>
 
+        <!-- Single things for the same day, picked with a tap (periods are entered under "Behandlung → Anderes") -->
+        <details class="card med-details today-other" id="today-other">
+          <summary class="med-summary">
+            <span class="med-summary-text">
+              <span class="h2" id="today-other-title">Anderes heute</span>
+              <span class="card-meta" id="today-other-meta"></span>
+            </span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </summary>
+          <div class="med-details-body">
+            <p class="card-meta" id="today-other-hint"></p>
+            <div class="other-quick" id="today-other-chips"></div>
+            <div class="today-other-add">
+              <input type="text" id="today-other-input" maxlength="80" placeholder="Neu, z. B. Spaziergang" aria-label="Neuer Eintrag" autocomplete="off">
+              <button type="button" class="btn" id="today-other-add">Hinzufügen</button>
+            </div>
+          </div>
+        </details>
+
         <section class="card week-card" aria-labelledby="h-week">
           <div class="card-head">
             <h2 id="h-week" class="h2">Deine Woche</h2>

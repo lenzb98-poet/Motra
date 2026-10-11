@@ -380,7 +380,7 @@ main { display: block; }
 .note-label { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: -6px; }
 .optional { font-weight: 400; color: var(--muted); margin-left: 4px; }
 
-textarea, .field input, .field select {
+textarea, .field input, .field select, .today-other-add input {
   width: 100%;
   background: var(--ink-0);
   border: 1px solid var(--ink-3);
@@ -391,8 +391,8 @@ textarea, .field input, .field select {
   color: var(--text);
 }
 textarea { resize: vertical; min-height: 78px; }
-textarea::placeholder, .field input::placeholder { color: #6f6a82; }
-textarea:focus, .field input:focus { outline: none; border-color: var(--accent); }
+textarea::placeholder, .field input::placeholder, .today-other-add input::placeholder { color: #6f6a82; }
+textarea:focus, .field input:focus, .today-other-add input:focus { outline: none; border-color: var(--accent); }
 
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; align-items: center; flex-wrap: wrap; }
 .form-actions .btn.primary { flex: 1 1 200px; }
@@ -956,3 +956,9 @@ a.btn { text-decoration: none; }
 .chip.running { margin-left: 8px; vertical-align: 2px; padding: 1px 7px; font-size: 11px; }
 .chip.running::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
 .other-row.span .other-date { color: var(--text-2); }
+
+/* "Anderes heute" on the Heute tab */
+.today-other .other-quick { margin: 4px 0 12px; }
+.today-other .card-meta { margin: 0 0 8px; }
+.today-other-add { display: flex; gap: 8px; }
+.today-other-add input { flex: 1 1 auto; min-width: 0; }

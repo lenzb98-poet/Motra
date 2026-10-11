@@ -13,7 +13,7 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null };
+let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null, todayOtherOpen: false };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
@@ -174,6 +174,63 @@ function greeting() {
   return 'Gute Nacht';
 }
 
+/* Single things for the day of the form: tap a chip to set or remove it. */
+function renderTodayOther() {
+  const date = form.date;
+  const isToday = date === todayKey();
+  const day = isToday ? 'heute' : relativeDay(date) === 'Gestern' ? 'gestern' : `am ${formatDayMonth(date)}`;
+  $('#today-other-title').textContent = `Anderes ${day}`;
+
+  const moments = store.getState().moments;
+  const colors = store.momentColors();
+  const onDay = moments.filter(m => !m.span && m.date === date);          // single entries I can toggle
+  const running = moments.filter(m => m.span && store.momentCovers(m, date)); // periods covering that day
+  const has = key => onDay.find(m => m.title.toLowerCase() === key);
+  const names = [...onDay, ...running].map(m => m.title);
+  $('#today-other-meta').textContent = names.length ? names.join(' · ') : 'Routine, besonderer Moment …';
+  $('#today-other-hint').textContent = `Tippe an, was du ${isToday ? 'heute ' : ''}gemacht oder erlebt hast. Noch mal tippen nimmt es wieder weg.`;
+
+  // Titles that were used for single days before, most frequent first.
+  const counts = new Map();
+  for (const m of moments) {
+    if (m.span) continue;
+    const k = m.title.toLowerCase();
+    const c = counts.get(k) ?? { title: m.title, n: 0, last: '' };
+    c.n++;
+    if (m.date >= c.last) { c.last = m.date; c.title = m.title; }
+    counts.set(k, c);
+  }
+  for (const m of onDay) if (!counts.has(m.title.toLowerCase())) counts.set(m.title.toLowerCase(), { title: m.title, n: 1, last: m.date });
+  const titles = [...counts.entries()].sort((a, b) => b[1].n - a[1].n || b[1].last.localeCompare(a[1].last)).slice(0, 12);
+  $('#today-other-chips').replaceChildren(...titles.map(([key, tt]) => {
+    const on = !!has(key);
+    return h('button', {
+      type: 'button', class: `quick-chip${on ? ' on' : ''}`, 'aria-pressed': String(on),
+      onclick: () => toggleTodayOther(tt.title),
+    }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, on ? h('small', null, '✓') : null);
+  }));
+  $('#today-other-chips').hidden = !titles.length;
+}
+
+function toggleTodayOther(title) {
+  const key = title.trim().toLowerCase();
+  if (!key) return;
+  const existing = store.getState().moments.find(m => !m.span && m.date === form.date && m.title.toLowerCase() === key);
+  if (existing) store.deleteMoment(existing.id);
+  else store.addMoment({ date: form.date, title });
+}
+
+function addTodayOther() {
+  const input = $('#today-other-input');
+  const title = input.value.trim();
+  if (!title) { input.focus(); return; }
+  const key = title.toLowerCase();
+  // adding what is already there is a no-op, not a toggle
+  if (!store.getState().moments.some(m => !m.span && m.date === form.date && m.title.toLowerCase() === key)) store.addMoment({ date: form.date, title });
+  input.value = '';
+  toast(`${title} eingetragen`);
+}
+
 function renderHeute() {
   const today = todayKey();
   $('#today-date').textContent = formatLong(today);
@@ -213,6 +270,7 @@ function renderHeute() {
   updateMoodUI();
   $('#btn-delete-entry').hidden = !existing;
   resetDeleteButton();
+  renderTodayOther();
 
   renderWeek();
 }
@@ -1197,6 +1255,12 @@ $('#other-title').addEventListener('input', () => {
   document.querySelectorAll('#other-quick .quick-chip').forEach(b => b.classList.toggle('on', b.firstChild.textContent.toLowerCase() === v));
 });
 $('#other-date').addEventListener('change', () => { $('#other-end').min = $('#other-date').value; });
+$('#today-other').open = !!prefs.todayOtherOpen;
+$('#today-other').addEventListener('toggle', e => {
+  if (prefs.todayOtherOpen !== e.target.open) { prefs.todayOtherOpen = e.target.open; savePrefs(); }
+});
+$('#today-other-add').addEventListener('click', addTodayOther);
+$('#today-other-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTodayOther(); } });
 $('#btn-more-other').addEventListener('click', () => { otherShown += 30; renderOtherList(); });
 $('#med-details').addEventListener('toggle', e => {
   if (autoToggle) { autoToggle = false; return; }
