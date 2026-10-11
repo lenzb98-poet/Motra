@@ -705,6 +705,12 @@ textarea:focus, .field input:focus, .today-other-add input:focus { outline: none
 .banner strong { color: var(--text); font-weight: 600; }
 .banner.warn { border-color: rgba(229, 99, 107, 0.4); }
 .banner .btn { min-height: 34px; font-size: 13px; padding: 0 12px; background: var(--ink-3); }
+.banner.dismissible { padding-right: 6px; flex-wrap: nowrap; gap: 8px; }
+.banner.dismissible .btn { flex: none; }
+.banner.dismissible > span { flex: 1 1 auto; min-width: 0; }
+.banner-close { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 10px; background: transparent; color: var(--text-2); flex: none; }
+.banner-close:hover { background: var(--ink-3); color: var(--text); }
+.banner-close svg { width: 18px; height: 18px; }
 
 /* ---------------- tab bar ---------------- */
 

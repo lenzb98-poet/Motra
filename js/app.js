@@ -13,7 +13,7 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null };
+let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null, backupHiddenOn: null };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
@@ -1681,10 +1681,16 @@ function renderBanners() {
   const realEntries = st.entries.filter(e => !e.demo).length;
   const last = st.settings.lastBackup;
   const daysSince = last ? diffDays(last.slice(0, 10), todayKey()) : null;
-  if (realEntries >= 21 && (daysSince == null || daysSince >= 14) && currentView === 'heute') {
-    items.push(h('div', { class: 'banner' },
+  // Closed with the x: stays away for 14 days, then asks again (if there's still no backup).
+  const hidden = prefs.backupHiddenOn != null && diffDays(prefs.backupHiddenOn, todayKey()) < 14;
+  if (realEntries >= 21 && (daysSince == null || daysSince >= 14) && currentView === 'heute' && !hidden) {
+    items.push(h('div', { class: 'banner dismissible' },
       h('span', null, last ? `Letzte Sicherung vor ${daysSince} Tagen.` : 'Du hast noch keine Sicherung deiner Einträge.'),
-      h('button', { type: 'button', class: 'btn small', onclick: settingsSheet }, 'Jetzt sichern')));
+      h('button', { type: 'button', class: 'btn small', onclick: settingsSheet }, 'Jetzt sichern'),
+      h('button', {
+        type: 'button', class: 'banner-close', 'aria-label': 'Hinweis schließen',
+        onclick: () => { prefs.backupHiddenOn = todayKey(); savePrefs(); renderBanners(); },
+      }, icon('i-close'))));
   }
   el.replaceChildren(...items);
 }
