@@ -906,19 +906,19 @@ a.btn { text-decoration: none; }
 .view-part { display: flex; flex-direction: column; gap: 16px; }
 .view-switch { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .other-toggle {
-  min-height: 40px;
+  min-height: 42px;
   padding: 0 16px;
   border-radius: 12px;
-  border: 1px solid var(--ink-3);
-  background: transparent;
-  color: var(--text-2);
+  border: 1px solid rgba(255,255,255,0.05);
+  background: var(--ink-1);
+  color: var(--muted);
   font-size: 13px;
   font-weight: 600;
 }
-.other-toggle:hover { color: var(--text); border-color: var(--ink-4); }
-.other-toggle.active { background: var(--moment); border-color: var(--moment); color: var(--on-accent); }
+.other-toggle:hover { color: var(--text-2); }
+.other-toggle.active { background: var(--ink-3); color: var(--text); }
 
-:root { --moment: #e0b765; }
+:root { --moment: var(--accent); }
 .med-swatch.moment, .key-dot.moment { background: var(--moment); }
 .hbar-fill.moment { background: var(--moment); }
 .moment-dot { stroke: var(--ink-1); stroke-width: 2; }
@@ -937,7 +937,7 @@ a.btn { text-decoration: none; }
 }
 .quick-chip small { color: var(--muted); font-weight: 500; }
 .quick-chip .key-dot { width: 9px; height: 9px; }
-.quick-chip.on { border-color: var(--moment); color: var(--text); }
+.quick-chip.on { background: var(--ink-3); border-color: var(--ink-4); color: var(--text); }
 
 .other-list { display: flex; flex-direction: column; }
 .other-row {
