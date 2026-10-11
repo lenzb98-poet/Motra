@@ -192,6 +192,8 @@ export const getMed = id => state.meds.find(m => m.id === id) ?? null;
 export const openPhase = med => med.phases.find(p => p.end == null) ?? null;
 export const lastPhase = med => med.phases[med.phases.length - 1];
 export const activePhase = (med, date) => med.phases.find(p => p.start <= date && (p.end == null || date <= p.end)) ?? null;
+// Therapies can be entered ahead of time: the next phase that hasn't started yet.
+export const nextPhase = med => med.phases.find(p => p.start > todayKey()) ?? null;
 
 function nextColor() {
   const used = new Set(state.meds.map(m => m.color));

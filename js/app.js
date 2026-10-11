@@ -551,53 +551,74 @@ const TERMS = {
   therapy: {
     kind: 'Therapie', group: 'Therapien', dose: 'Häufigkeit / Art', newDose: 'Neue Häufigkeit / Art', noDose: 'Ohne Angabe',
     change: 'Häufigkeit ändern', stop: 'Beenden', stopped: 'Beendet', active: 'Läuft', restart: 'Wieder aufnehmen',
-    since: 'Läuft seit', lastDay: 'Letzte Sitzung', last: 'zuletzt am', periods: 'Therapie-Zeiträume',
+    since: 'Beginn', lastDay: 'Letzte Sitzung', last: 'zuletzt am', periods: 'Therapie-Zeiträume',
     stillHint: 'Lass „Bis“ leer, solange die Therapie noch läuft.', namePh: 'z. B. Psychotherapie', dosePh: 'z. B. 1× pro Woche',
     newDosePh: 'z. B. alle 2 Wochen', del: 'Therapie löschen', doseToast: 'Änderung gespeichert', stoppedHistory: 'Beendet ab',
     stopToast: n => `${n} als beendet gespeichert`, stopTitle: n => `${n} beenden`, doseTitle: n => `${n} ändern`,
     restartTitle: n => `${n} wieder aufnehmen`, restartToast: n => `${n} wieder aufgenommen`,
     stopText: 'Die Therapie bleibt mit ihrem Verlauf erhalten. Du kannst sie später wieder aufnehmen.',
-    startHint: 'Wenn die Therapie schon länger läuft, wähle das ungefähre Startdatum. So passt der Verlauf.',
+    startHint: 'Läuft die Therapie schon länger, wähle das ungefähre Startdatum. Fängt sie erst an, trag den geplanten Beginn ein: Bis dahin steht sie als „Geplant“ da und zählt in der Auswertung erst ab diesem Tag.',
     withDays: 'an Tagen mit laufender Therapie', mostly: 'Im Zeitraum fast durchgehend in Therapie', rarely: 'Im Zeitraum kaum in Therapie.',
   },
 };
 const T = med => TERMS[med?.kind === 'therapy' ? 'therapy' : 'med'];
 const byKind = meds => [...meds].sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
 
+// Today's state: running, planned (starts later) or stopped, plus an upcoming change if one is entered.
 function medStatus(med) {
-  const open = store.openPhase(med);
+  const today = todayKey();
+  const cur = store.activePhase(med, today);
+  const next = store.nextPhase(med);
+  if (cur) {
+    let text = `seit ${formatDayMonth(cur.start)}`;
+    let upcoming = null;
+    if (cur.end && next && next.start === addDays(cur.end, 1)) upcoming = `Ab ${formatDayMonth(next.start)}: ${next.dose || T(med).noDose}`;
+    else if (cur.end) text += `, bis ${formatDayMonth(cur.end)}`;
+    return { state: 'active', dose: cur.dose, text, upcoming };
+  }
+  if (next) return { state: 'planned', dose: next.dose, text: `beginnt am ${formatDayMonth(next.start)}` };
   const last = store.lastPhase(med);
-  return open
-    ? { active: true, dose: open.dose, text: `seit ${formatDayMonth(open.start)}` }
-    : { active: false, dose: last.dose, text: `${T(med).last} ${formatDayMonth(last.end)}` };
+  return { state: 'stopped', dose: last.dose, text: `${T(med).last} ${formatDayMonth(last.end)}` };
 }
 
 function medHistory(med) {
+  const today = todayKey();
   return store.medEvents(med).map(ev => {
     const d = formatShort(ev.date);
-    if (ev.type === 'start') return `Begonnen ${d}${ev.dose ? ` mit ${ev.dose}` : ''}`;
-    if (ev.type === 'restart') return `Wieder begonnen ${d}${ev.dose ? ` mit ${ev.dose}` : ''}`;
-    if (ev.type === 'dose') return `${d}: ${ev.prevDose || '–'} → ${ev.dose || '–'}`;
-    return `${T(med).stoppedHistory} ${d}`;
+    const future = ev.date > today;
+    if (ev.type === 'start') return `${future ? 'Beginnt' : 'Begonnen'} ${d}${ev.dose ? ` mit ${ev.dose}` : ''}`;
+    if (ev.type === 'restart') return `${future ? 'Beginnt wieder' : 'Wieder begonnen'} ${d}${ev.dose ? ` mit ${ev.dose}` : ''}`;
+    if (ev.type === 'dose') return `${future ? 'Ab ' : ''}${d}: ${ev.prevDose || '–'} → ${ev.dose || '–'}`;
+    return future ? `Endet ${formatShort(addDays(ev.date, -1))}` : `${T(med).stoppedHistory} ${d}`;
   }).join(' · ');
 }
+
+// Furthest date a form accepts: therapies may be planned ahead, medications are logged up to today.
+const maxDateFor = kind => (kind === 'therapy' ? addDays(todayKey(), 730) : todayKey());
 
 function medCard(m) {
   const st = medStatus(m);
   const t = T(m);
+  // Change/stop need a running phase without a set end; anything else is changed via "Bearbeiten".
+  const open = store.openPhase(m);
+  const actions = [];
+  if (st.state === 'active' && open && open.start <= todayKey()) {
+    actions.push(h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m) }, t.change),
+      h('button', { type: 'button', class: 'btn small', onclick: () => stopSheet(m) }, t.stop));
+  } else if (st.state === 'stopped') {
+    actions.push(h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m, true) }, t.restart));
+  }
+  actions.push(h('button', { type: 'button', class: 'btn small ghost', onclick: () => editSheet(m) }, 'Bearbeiten'));
+  const chip = { active: [t.active, ' active'], planned: ['Geplant', ' planned'], stopped: [t.stopped, ''] }[st.state];
   return h('article', { class: 'card med-card' },
     h('div', { class: 'med-head' },
       h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }),
       h('h3', { class: 'med-name' }, m.name),
-      h('span', { class: `chip${st.active ? ' active' : ''}` }, st.active ? t.active : t.stopped)),
+      h('span', { class: `chip${chip[1]}` }, chip[0])),
     h('div', { class: 'med-dose' }, h('strong', null, st.dose || t.noDose), h('span', null, st.text)),
+    st.upcoming ? h('p', { class: 'med-upcoming' }, st.upcoming) : null,
     h('p', { class: 'med-history' }, medHistory(m)),
-    h('div', { class: 'med-actions' },
-      st.active
-        ? [h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m) }, t.change),
-          h('button', { type: 'button', class: 'btn small', onclick: () => stopSheet(m) }, t.stop)]
-        : h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m, true) }, t.restart),
-      h('button', { type: 'button', class: 'btn small ghost', onclick: () => editSheet(m) }, 'Bearbeiten')));
+    h('div', { class: 'med-actions' }, ...actions));
 }
 
 function renderMedis() {
@@ -686,7 +707,7 @@ function addMedSheet(kind = 'med') {
   const t = TERMS[kind];
   const name = h('input', { id: 'med-name', type: 'text', placeholder: t.namePh, maxlength: 60, required: true, autocomplete: 'off' });
   const dose = h('input', { id: 'med-dose', type: 'text', placeholder: t.dosePh, maxlength: 60, autocomplete: 'off' });
-  const start = dateInputEl('med-start', todayKey());
+  const start = dateInputEl('med-start', todayKey(), { max: maxDateFor(kind) });
   const err = h('p', { class: 'form-error', hidden: true });
   // Switching the kind keeps what was typed and only changes labels and hints.
   const kindSwitch = h('div', { class: 'segmented kind-switch', role: 'radiogroup', 'aria-label': 'Art' },
@@ -696,13 +717,19 @@ function addMedSheet(kind = 'med') {
         if (k === kind) return;
         const keep = { name: name.value, dose: dose.value, start: start.value };
         addMedSheet(k);
-        $('#med-name').value = keep.name; $('#med-dose').value = keep.dose; $('#med-start').value = keep.start;
+        $('#med-name').value = keep.name; $('#med-dose').value = keep.dose;
+        // A planned (future) start isn't possible for medications: fall back to today.
+        $('#med-start').value = keep.start > maxDateFor(k) ? todayKey() : keep.start;
       },
     }, v.kind)));
   const f = h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
     if (!name.value.trim()) { err.textContent = 'Bitte gib einen Namen ein.'; err.hidden = false; return; }
     if (!start.value) { err.textContent = 'Bitte wähle ein Startdatum.'; err.hidden = false; return; }
+    if (start.value > maxDateFor(kind)) {
+      err.textContent = kind === 'therapy' ? 'Der Beginn darf höchstens zwei Jahre in der Zukunft liegen.' : 'Bei Medikamenten geht das Startdatum nur bis heute.';
+      err.hidden = false; return;
+    }
     store.addMed({ name: name.value, dose: dose.value, start: start.value, kind });
     closeSheet();
     toast(`${name.value.trim()} hinzugefügt`);
@@ -723,10 +750,10 @@ function doseSheet(med, restart = false) {
   const min = restart ? addDays(last.end, 1) : open.start;
   const t = T(med);
   const dose = h('input', { id: 'dose-new', type: 'text', value: restart ? last.dose : '', placeholder: t.newDosePh, maxlength: 60, autocomplete: 'off' });
-  const date = dateInputEl('dose-date', todayKey() < min ? min : todayKey(), { min });
+  const date = dateInputEl('dose-date', todayKey() < min ? min : todayKey(), { min, max: maxDateFor(med.kind) });
   const f = h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
-    if (!date.value || date.value < min) return;
+    if (!date.value || date.value < min || date.value > maxDateFor(med.kind)) return;
     store.changeDose(med.id, dose.value, date.value);
     closeSheet();
     toast(restart ? t.restartToast(med.name) : t.doseToast);
@@ -740,13 +767,13 @@ function doseSheet(med, restart = false) {
 
 function stopSheet(med) {
   const open = store.openPhase(med);
-  const date = dateInputEl('stop-date', todayKey(), { min: open.start, max: todayKey() });
+  const date = dateInputEl('stop-date', todayKey(), { min: open.start, max: maxDateFor(med.kind) });
   const f = h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
     if (!date.value) return;
     store.stopMed(med.id, date.value);
     closeSheet();
-    toast(T(med).stopToast(med.name));
+    toast(date.value > todayKey() ? `${med.name} endet am ${formatDayMonth(date.value)}` : T(med).stopToast(med.name));
   } },
   field(T(med).lastDay, date),
   h('p', { class: 'sheet-text' }, T(med).stopText),
@@ -763,8 +790,8 @@ function editSheet(med) {
   const renderPhases = () => {
     list.replaceChildren(...phases.map((p, i) => {
       const dose = h('input', { type: 'text', id: `ph-dose-${i}`, value: p.dose, maxlength: 60, placeholder: T(med).dose, oninput: e => { p.dose = e.target.value; } });
-      const start = h('input', { type: 'date', id: `ph-start-${i}`, value: p.start, max: todayKey(), oninput: e => { p.start = e.target.value; } });
-      const end = h('input', { type: 'date', id: `ph-end-${i}`, value: p.end ?? '', max: todayKey(), oninput: e => { p.end = e.target.value || null; } });
+      const start = h('input', { type: 'date', id: `ph-start-${i}`, value: p.start, max: maxDateFor(med.kind), oninput: e => { p.start = e.target.value; } });
+      const end = h('input', { type: 'date', id: `ph-end-${i}`, value: p.end ?? '', max: maxDateFor(med.kind), oninput: e => { p.end = e.target.value || null; } });
       return h('div', { class: 'phase' },
         field(T(med).dose, dose, 'dose'),
         field('Von', start),
@@ -777,7 +804,10 @@ function editSheet(med) {
   const f = h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
     if (!name.value.trim()) { err.textContent = 'Bitte gib einen Namen ein.'; err.hidden = false; return; }
-    const msg = store.validatePhases(phases);
+    const msg = store.validatePhases(phases)
+      ?? (phases.some(p => p.start > maxDateFor(med.kind) || (p.end && p.end > maxDateFor(med.kind)))
+        ? (med.kind === 'therapy' ? 'Daten dürfen höchstens zwei Jahre in der Zukunft liegen.' : 'Bei Medikamenten gehen die Daten nur bis heute.')
+        : null);
     if (msg) { err.textContent = msg; err.hidden = false; return; }
     store.updateMed(med.id, { name: name.value, phases });
     closeSheet();

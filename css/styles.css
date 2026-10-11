@@ -632,6 +632,8 @@ textarea:focus, .field input:focus { outline: none; border-color: var(--accent);
   white-space: nowrap;
 }
 .chip.active::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+.chip.planned { background: transparent; box-shadow: inset 0 0 0 1px var(--ink-4); color: var(--accent); }
+.med-upcoming { margin: -4px 0 0; font-size: 13px; color: var(--accent); }
 .med-dose { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 .med-dose strong { font-size: 22px; font-family: var(--font-display); font-weight: 600; }
 .med-dose span { font-size: 13.5px; color: var(--text-2); }

@@ -349,7 +349,11 @@ export function medChart(container, { from, to }) {
         lastLabelEnd = tx + estW;
       }
     });
-    if (!any) lanes.append(s('text', { x: right, y: ly + 10, class: 'lane-none', 'text-anchor': 'end' }, 'nicht im Zeitraum'));
+    if (!any) {
+      const upcoming = m.phases.find(p => p.start > to);
+      lanes.append(s('text', { x: right, y: ly + 10, class: 'lane-none', 'text-anchor': 'end' },
+        upcoming ? `beginnt ${formatDayMonth(upcoming.start)}` : 'nicht im Zeitraum'));
+    }
   });
   svg.append(lanes);
 
