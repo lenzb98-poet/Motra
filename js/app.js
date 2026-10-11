@@ -13,7 +13,7 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null, todayOtherOpen: false };
+let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
@@ -155,6 +155,7 @@ function loadFormEntry() {
   form.note = e?.note ?? '';
   form.dirty = false;
   $('#entry-note').value = form.note;
+  $('#tab-note-dot').hidden = !form.note.trim();
 }
 
 function selectEntry(date, slot) {
@@ -179,16 +180,19 @@ function renderTodayOther() {
   const date = form.date;
   const isToday = date === todayKey();
   const day = isToday ? 'heute' : relativeDay(date) === 'Gestern' ? 'gestern' : `am ${formatDayMonth(date)}`;
-  $('#today-other-title').textContent = `Anderes ${day}`;
-
   const moments = store.getState().moments;
   const colors = store.momentColors();
   const onDay = moments.filter(m => !m.span && m.date === date);          // single entries I can toggle
   const running = moments.filter(m => m.span && store.momentCovers(m, date)); // periods covering that day
   const has = key => onDay.find(m => m.title.toLowerCase() === key);
-  const names = [...onDay, ...running].map(m => m.title);
-  $('#today-other-meta').textContent = names.length ? names.join(' · ') : 'Routine, besonderer Moment …';
-  $('#today-other-hint').textContent = `Tippe an, was du ${isToday ? 'heute ' : ''}gemacht oder erlebt hast. Noch mal tippen nimmt es wieder weg.`;
+  const count = onDay.length + running.length;
+  const badge = $('#tab-other-count');
+  badge.hidden = !count;
+  badge.textContent = String(count);
+  $('#today-other-hint').textContent = `Was hast du ${day === 'heute' ? 'heute ' : day === 'gestern' ? 'gestern ' : `${day} `}gemacht oder erlebt? Tippe an, noch mal tippen nimmt es weg.`;
+  const run = $('#today-other-running');
+  run.hidden = !running.length;
+  run.textContent = running.length ? `Läuft in dieser Zeit: ${running.map(m => m.title).join(', ')}` : '';
 
   // Titles that were used for single days before, most frequent first.
   const counts = new Map();
@@ -478,6 +482,7 @@ function initHeute() {
     form.note = e.target.value;
     form.dirty = true;
     updateSaveButton();
+    $('#tab-note-dot').hidden = !form.note.trim();
   });
 
   initFineSlider();
@@ -1255,10 +1260,20 @@ $('#other-title').addEventListener('input', () => {
   document.querySelectorAll('#other-quick .quick-chip').forEach(b => b.classList.toggle('on', b.firstChild.textContent.toLowerCase() === v));
 });
 $('#other-date').addEventListener('change', () => { $('#other-end').min = $('#other-date').value; });
-$('#today-other').open = !!prefs.todayOtherOpen;
-$('#today-other').addEventListener('toggle', e => {
-  if (prefs.todayOtherOpen !== e.target.open) { prefs.todayOtherOpen = e.target.open; savePrefs(); }
-});
+// "Einträge" and "Notiz" are folded away by default; a tap opens one, another tap closes it.
+function showEntryTab(tab) {
+  for (const name of ['other', 'note']) {
+    const open = tab === name;
+    $(`#tab-${name}`).setAttribute('aria-expanded', String(open));
+    $(`#tab-${name}`).classList.toggle('open', open);
+    $(`#panel-${name}`).hidden = !open;
+  }
+  if (tab === 'note') $('#entry-note').focus({ preventScroll: true });
+}
+let entryTab = null;
+for (const name of ['other', 'note']) {
+  $(`#tab-${name}`).addEventListener('click', () => { entryTab = entryTab === name ? null : name; showEntryTab(entryTab); });
+}
 $('#today-other-add').addEventListener('click', addTodayOther);
 $('#today-other-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTodayOther(); } });
 $('#btn-more-other').addEventListener('click', () => { otherShown += 30; renderOtherList(); });

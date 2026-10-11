@@ -70,33 +70,29 @@
             <p class="mood-caption" id="mood-caption" aria-live="polite">Tippe auf ein Gesicht.</p>
           </fieldset>
 
-          <label class="note-label" for="entry-note">Notiz <span class="optional">optional</span></label>
-          <textarea id="entry-note" name="note" rows="3" maxlength="1000" placeholder="Was beschäftigt dich? Wie hast du geschlafen?"></textarea>
+          <!-- Next to the note: pick single things you did (periods live under Behandlung → Anderes) -->
+          <div class="entry-tabs" role="group" aria-label="Zusatz zum Eintrag">
+            <button type="button" class="entry-tab" id="tab-other" aria-expanded="false" aria-controls="panel-other">Einträge <span class="entry-count" id="tab-other-count" hidden></span></button>
+            <button type="button" class="entry-tab" id="tab-note" aria-expanded="false" aria-controls="panel-note">Notiz <span class="optional">optional</span><span class="entry-count dot" id="tab-note-dot" hidden aria-label="enthält Text"></span></button>
+          </div>
+          <div id="panel-note" role="region" aria-labelledby="tab-note" class="entry-panel" hidden>
+            <textarea id="entry-note" name="note" rows="3" maxlength="1000" placeholder="Was beschäftigt dich? Wie hast du geschlafen?" aria-label="Notiz"></textarea>
+          </div>
+          <div id="panel-other" role="region" aria-labelledby="tab-other" class="entry-panel today-other" hidden>
+            <p class="card-meta" id="today-other-hint"></p>
+            <div class="other-quick" id="today-other-chips"></div>
+            <p class="card-meta" id="today-other-running" hidden></p>
+            <div class="today-other-add">
+              <input type="text" id="today-other-input" maxlength="80" placeholder="Neu, z. B. Spaziergang" aria-label="Neuer Eintrag" autocomplete="off">
+              <button type="button" class="btn" id="today-other-add">Hinzufügen</button>
+            </div>
+          </div>
 
           <div class="form-actions">
             <button type="button" class="btn ghost danger" id="btn-delete-entry" hidden>Eintrag löschen</button>
             <button type="submit" class="btn primary" id="btn-save" disabled>Speichern</button>
           </div>
         </form>
-
-        <!-- Single things for the same day, picked with a tap (periods are entered under "Behandlung → Anderes") -->
-        <details class="card med-details today-other" id="today-other">
-          <summary class="med-summary">
-            <span class="med-summary-text">
-              <span class="h2" id="today-other-title">Anderes heute</span>
-              <span class="card-meta" id="today-other-meta"></span>
-            </span>
-            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </summary>
-          <div class="med-details-body">
-            <p class="card-meta" id="today-other-hint"></p>
-            <div class="other-quick" id="today-other-chips"></div>
-            <div class="today-other-add">
-              <input type="text" id="today-other-input" maxlength="80" placeholder="Neu, z. B. Spaziergang" aria-label="Neuer Eintrag" autocomplete="off">
-              <button type="button" class="btn" id="today-other-add">Hinzufügen</button>
-            </div>
-          </div>
-        </details>
 
         <section class="card week-card" aria-labelledby="h-week">
           <div class="card-head">
