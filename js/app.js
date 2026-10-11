@@ -13,7 +13,7 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { rangeVerlauf: '30', rangeMedis: '90' };
+let prefs = { rangeVerlauf: '30', rangeMedis: '90', kindFilter: 'all', medListOpen: null };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
@@ -621,30 +621,59 @@ function medCard(m) {
     h('div', { class: 'med-actions' }, ...actions));
 }
 
+let autoToggle = false; // set while the app itself opens/closes the list, so that isn't saved as a choice
+const KIND_FILTERS = [
+  { id: 'all', label: 'Alle', title: 'Deine Medikamente & Therapien' },
+  { id: 'med', label: 'Medikamente', title: 'Deine Medikamente' },
+  { id: 'therapy', label: 'Therapien', title: 'Deine Therapien' },
+];
+const kindOf = m => (m.kind === 'therapy' ? 'therapy' : 'med');
+// Medications and therapies the "Anzeigen" switch lets through.
+const shownMeds = () => store.getState().meds.filter(m => prefs.kindFilter === 'all' || kindOf(m) === prefs.kindFilter);
+
 function renderMedis() {
-  const meds = store.getState().meds;
-  const groups = ['med', 'therapy'].map(kind => ({ kind, items: meds.filter(m => (m.kind === 'therapy' ? 'therapy' : 'med') === kind) }))
-    .filter(g => g.items.length);
+  const filter = KIND_FILTERS.find(f => f.id === prefs.kindFilter) ?? KIND_FILTERS[0];
+  $('#kind-filter').replaceChildren(...KIND_FILTERS.map(f => h('button', {
+    type: 'button', role: 'radio', 'aria-checked': String(f.id === filter.id),
+    onclick: () => { prefs.kindFilter = f.id; savePrefs(); renderMedis(); },
+  }, f.label)));
+
+  const meds = shownMeds();
+  const groups = ['med', 'therapy'].map(kind => ({ kind, items: meds.filter(m => kindOf(m) === kind) })).filter(g => g.items.length);
   $('#med-list').replaceChildren(...groups.flatMap(g => [
     groups.length > 1 ? h('h3', { class: 'med-group' }, TERMS[g.kind].group) : null,
     ...g.items.map(medCard),
   ].filter(Boolean)));
   if (!meds.length) {
-    $('#med-list').replaceChildren(h('p', { class: 'empty-text' }, 'Trag deine Medikamente und Therapien mit Startdatum ein. Danach siehst du unten, wie deine Stimmung dazu verlaufen ist.'));
+    const none = { all: 'Trag deine Medikamente und Therapien mit Startdatum ein. Danach siehst du unten, wie deine Stimmung dazu verlaufen ist.',
+      med: 'Noch keine Medikamente eingetragen.', therapy: 'Noch keine Therapien eingetragen.' }[filter.id];
+    $('#med-list').replaceChildren(h('p', { class: 'empty-text' }, none));
   }
+
+  // Folded summary: title, count and what's running or planned.
+  $('#h-med-list').textContent = filter.title;
+  const states = meds.map(m => medStatus(m).state);
+  const count = n => states.filter(s => s === n).length;
+  const parts = [count('active') && `${count('active')} ${count('active') === 1 ? 'läuft' : 'laufen'}`,
+    count('planned') && `${count('planned')} geplant`, count('stopped') && `${count('stopped')} beendet`].filter(Boolean);
+  $('#med-summary-meta').textContent = meds.length ? `${meds.length} · ${parts.join(', ')}` : 'Noch nichts eingetragen';
+  const details = $('#med-details');
+  // Open by default only while the list is empty; afterwards remember the reader's choice.
+  const shouldOpen = prefs.medListOpen ?? store.getState().meds.length === 0;
+  if (details.open !== shouldOpen) { autoToggle = true; details.open = shouldOpen; }
 
   segmented($('#range-medis'), prefs.rangeMedis, id => { prefs.rangeMedis = id; savePrefs(); renderMedis(); });
   const { from, to } = rangeBounds(prefs.rangeMedis);
-  medLegend($('#med-chart-legend'));
-  medChart($('#med-chart'), { from, to });
+  medLegend($('#med-chart-legend'), filter.id);
+  medChart($('#med-chart'), { from, to, show: filter.id });
   renderCompare(from, to);
   renderEvents();
 }
 
 function renderCompare(from, to) {
-  const meds = byKind(store.getState().meds);
+  const meds = byKind(shownMeds());
   const el = $('#compare');
-  if (!meds.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Noch keine Medikamente oder Therapien eingetragen.')); return; }
+  if (!meds.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Hier ist noch nichts eingetragen.')); return; }
   const MIN = 5;
   el.replaceChildren(...meds.map(m => {
     const t = T(m);
@@ -671,7 +700,7 @@ function renderCompare(from, to) {
 
 function renderEvents() {
   const el = $('#events');
-  const events = store.getState().meds.flatMap(m => store.medEvents(m)).filter(e => e.date <= todayKey())
+  const events = shownMeds().flatMap(m => store.medEvents(m)).filter(e => e.date <= todayKey())
     .sort((a, b) => b.date.localeCompare(a.date));
   if (!events.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Hier erscheint jeder Beginn, jede Änderung von Dosis oder Häufigkeit und jedes Ende mit dem Stimmungsvergleich davor und danach.')); return; }
   el.replaceChildren(...events.slice(0, 20).map(ev => {
@@ -953,7 +982,11 @@ function confirmImport(text) {
 }
 
 $('#btn-settings').addEventListener('click', settingsSheet);
-$('#btn-add-med').addEventListener('click', () => addMedSheet());
+$('#btn-add-med').addEventListener('click', () => addMedSheet(prefs.kindFilter === 'therapy' ? 'therapy' : 'med'));
+$('#med-details').addEventListener('toggle', e => {
+  if (autoToggle) { autoToggle = false; return; }
+  if (prefs.medListOpen !== e.target.open) { prefs.medListOpen = e.target.open; savePrefs(); }
+});
 $('#btn-more-entries').addEventListener('click', () => { listDays += 14; renderEntryList(); });
 
 /* ---------------- reminders ---------------- */

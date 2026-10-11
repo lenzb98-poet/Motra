@@ -267,9 +267,14 @@ export function moodLegend(el) {
 
 /* ---------------- mood + medication chart ---------------- */
 
-export function medChart(container, { from, to }) {
+// `show` filters by kind: 'all', 'med' or 'therapy'.
+const shownMeds = show => [...store.getState().meds]
+  .filter(m => show === 'all' || !show || (m.kind === 'therapy' ? 'therapy' : 'med') === show)
+  .sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
+
+export function medChart(container, { from, to, show = 'all' }) {
   // Medications first, then therapies, each group in the order they were added.
-  const meds = [...store.getState().meds].sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
+  const meds = shownMeds(show);
   const groupGap = meds.some(m => m.kind === 'therapy') && meds.some(m => m.kind !== 'therapy') ? 22 : 0;
   const firstTherapy = meds.findIndex(m => m.kind === 'therapy');
   const laneTop = (i, base) => base + i * 44 + (firstTherapy >= 0 && i >= firstTherapy ? groupGap : 0);
@@ -405,8 +410,8 @@ export function eventText(ev) {
   return ev.med.kind === 'therapy' ? `${n} beendet` : `${n} abgesetzt`;
 }
 
-export function medLegend(el) {
-  const meds = [...store.getState().meds].sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
+export function medLegend(el, show = 'all') {
+  const meds = shownMeds(show);
   el.replaceChildren(
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),

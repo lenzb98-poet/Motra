@@ -128,16 +128,26 @@
       <section class="view" id="view-medis" data-view="medis" aria-labelledby="h-medis" hidden>
         <div class="view-head">
           <h1 id="h-medis" class="display">Medikamente &amp; Therapien</h1>
+          <div class="segmented" role="radiogroup" aria-label="Anzeigen" id="kind-filter"></div>
         </div>
 
-        <section aria-labelledby="h-med-list">
-          <h2 id="h-med-list" class="visually-hidden">Deine Medikamente und Therapien</h2>
-          <div class="med-list" id="med-list"></div>
-          <button type="button" class="btn dashed wide" id="btn-add-med">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg>
-            Medikament oder Therapie hinzufügen
-          </button>
-        </section>
+        <!-- The list folds away so the charts are visible at a glance -->
+        <details class="card med-details" id="med-details">
+          <summary class="med-summary">
+            <span class="med-summary-text">
+              <span class="h2" id="h-med-list">Deine Medikamente &amp; Therapien</span>
+              <span class="card-meta" id="med-summary-meta"></span>
+            </span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </summary>
+          <div class="med-details-body">
+            <div class="med-list" id="med-list"></div>
+            <button type="button" class="btn dashed wide" id="btn-add-med">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg>
+              Medikament oder Therapie hinzufügen
+            </button>
+          </div>
+        </details>
 
         <section class="card chart-card" aria-labelledby="h-med-chart">
           <div class="card-head stack">
