@@ -786,25 +786,28 @@ function renderOther() {
   // Quick buttons: what you've entered before, most frequent first.
   // Picking one also picks "Zeitraum" when it was last entered as a period.
   const titles = store.momentTitles();
+  const colors = store.momentColors();
   const title = $('#other-title');
   const lastOf = key => [...store.getState().moments].reverse().find(m => m.title.toLowerCase() === key);
   $('#other-quick').replaceChildren(...titles.slice(0, 8).map(tt => h('button', {
     type: 'button', class: `quick-chip${title.value.trim().toLowerCase() === tt.title.toLowerCase() ? ' on' : ''}`,
     onclick: () => { title.value = tt.title; otherSpan = !!lastOf(tt.title.toLowerCase())?.span; renderOther(); $('#other-note').focus(); },
-  }, tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
+  }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
   $('#other-quick').hidden = !titles.length;
 
   segmented($('#range-other'), prefs.rangeOther, id => { prefs.rangeOther = id; savePrefs(); renderOther(); });
   const { from, to } = rangeBounds(prefs.rangeOther);
-  momentsLegend($('#other-chart-legend'));
+  momentsLegend($('#other-chart-legend'), { from, to });
   momentsChart($('#other-chart'), { from, to });
   renderOtherEffect(from, to, titles);
   renderOtherList();
 }
 
-const hbarRow = (label, data, cls) => h('div', { class: 'hbar' },
+const momentCss = (colors, title) => `var(--c${(colors.get(title.toLowerCase()) ?? 0) + 1})`;
+
+const hbarRow = (label, data, cls, color) => h('div', { class: 'hbar' },
   h('span', { class: 'hbar-label' }, label),
-  h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%` } }) : null),
+  h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%`, ...(color ? { background: color } : {}) } }) : null),
   h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
 
 function renderOtherEffect(from, to, titles) {
@@ -812,6 +815,7 @@ function renderOtherEffect(from, to, titles) {
   const moments = store.getState().moments;
   if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Trag ein, was du gemacht oder erlebt hast. Hier siehst du dann, wie deine Stimmung an diesen Tagen war.')); return; }
   const blocks = [];
+  const colors = store.momentColors();
   const count = m => titles.find(x => x.title.toLowerCase() === m.title.toLowerCase())?.n ?? 0;
   // Recurring things (entered at least twice): days with vs. without, within the range.
   for (const tt of titles.filter(x => x.n >= 2)) {
@@ -822,21 +826,21 @@ function renderOtherEffect(from, to, titles) {
     else if (c.without.days < 3) hint = 'Kaum Vergleichstage ohne diesen Eintrag im Zeitraum.';
     else hint = h('span', null, 'Unterschied ', deltaEl(c.with.avg - c.without.avg), ' an Tagen damit.');
     blocks.push(h('div', { class: 'compare-block' },
-      h('h3', null, h('span', { class: 'med-swatch moment' }), tt.title, h('span', { class: 'kind-tag' }, `${tt.n}×`)),
-      h('div', { class: 'compare-rows' }, hbarRow('Mit', c.with, 'with moment'), hbarRow('Ohne', c.without, 'without')),
+      h('h3', null, h('span', { class: 'med-swatch moment', style: { background: momentCss(colors, tt.title) } }), tt.title, h('span', { class: 'kind-tag' }, `${tt.n}×`)),
+      h('div', { class: 'compare-rows' }, hbarRow('Mit', c.with, 'with moment', momentCss(colors, tt.title)), hbarRow('Ohne', c.without, 'without')),
       h('p', { class: 'compare-hint' }, hint)));
   }
   // Single periods: 4 weeks before, during, and up to 4 weeks after (like a medication).
   for (const m of store.momentsIn(from, to).filter(m => m.span && count(m) < 2).sort((a, b) => b.date.localeCompare(a.date))) {
     const e = store.spanEffect(m);
-    const rows = [hbarRow('Davor', e.before, 'without'), hbarRow(e.ended ? 'Während' : 'Bisher', e.during, 'with moment')];
+    const rows = [hbarRow('Davor', e.before, 'without'), hbarRow(e.ended ? 'Während' : 'Bisher', e.during, 'with moment', momentCss(colors, m.title))];
     if (e.ended) rows.push(hbarRow('Danach', e.after, 'without'));
     let hint;
     if (e.before.days < 3) hint = 'Zu wenige Einträge in den 4 Wochen davor für einen Vergleich.';
     else if (e.during.days < 3) hint = 'Noch zu wenige Tage mit Stimmungseintrag in diesem Zeitraum.';
     else hint = h('span', null, e.ended ? 'Währenddessen ' : 'Bisher ', deltaEl(e.during.avg - e.before.avg), ' im Vergleich zu den 4 Wochen davor.');
     blocks.push(h('div', { class: 'compare-block' },
-      h('h3', null, h('span', { class: 'med-swatch moment span' }), m.title, h('span', { class: 'kind-tag' }, momentDateLabel(m))),
+      h('h3', null, h('span', { class: 'med-swatch moment span', style: { background: momentCss(colors, m.title) } }), m.title, h('span', { class: 'kind-tag' }, momentDateLabel(m))),
       h('div', { class: 'compare-rows' }, ...rows),
       h('p', { class: 'compare-hint' }, hint)));
   }
@@ -849,7 +853,7 @@ function renderOtherEffect(from, to, titles) {
         w.before.avg != null && w.after.avg != null ? deltaEl(w.after.avg - w.before.avg) : null];
     blocks.push(h('div', { class: 'event' },
       h('div', { class: 'event-date' }, formatShort(m.date)),
-      h('div', null, h('div', { class: 'event-title' }, h('span', { class: 'med-swatch moment' }), m.title),
+      h('div', null, h('div', { class: 'event-title' }, h('span', { class: 'med-swatch moment', style: { background: momentCss(colors, m.title) } }), m.title),
         h('p', { class: 'event-body' }, ...body.filter(Boolean)))));
   }
   el.replaceChildren(...(blocks.length ? blocks : [h('p', { class: 'empty-text' }, 'Im gewählten Zeitraum gibt es noch nichts auszuwerten.')]));
@@ -868,6 +872,7 @@ function renderOtherList() {
   const sortKey = m => store.momentLast(m);
   const moments = [...store.getState().moments].sort((a, b) =>
     Number(store.momentRunning(b)) - Number(store.momentRunning(a)) || sortKey(b).localeCompare(sortKey(a)) || b.updatedAt.localeCompare(a.updatedAt));
+  const colors = store.momentColors();
   const el = $('#other-list');
   if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Noch nichts eingetragen.')); $('#btn-more-other').hidden = true; return; }
   el.replaceChildren(...moments.slice(0, otherShown).map(m => {
@@ -875,7 +880,7 @@ function renderOtherList() {
     return h('button', { type: 'button', class: `other-row${m.span ? ' span' : ''}`, onclick: () => editMomentSheet(m) },
       h('span', { class: 'other-date' }, momentDateLabel(m)),
       h('span', { class: 'other-main' },
-        h('span', { class: 'other-title' }, m.title, store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
+        h('span', { class: 'other-title' }, h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: momentCss(colors, m.title) } }), m.title, store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
         m.note ? h('span', { class: 'other-note' }, m.note) : null),
       mood != null ? h('span', { class: 'other-mood', title: m.span ? 'Ø Stimmung in diesem Zeitraum' : 'Ø Stimmung an diesem Tag', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
   }));

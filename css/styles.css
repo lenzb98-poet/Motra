@@ -915,10 +915,8 @@ a.btn { text-decoration: none; }
 :root { --moment: #e0b765; }
 .med-swatch.moment, .key-dot.moment { background: var(--moment); }
 .hbar-fill.moment { background: var(--moment); }
-.moment-dot { fill: var(--moment); stroke: var(--ink-1); stroke-width: 2; }
-.moment-line { stroke: var(--moment); stroke-width: 1; opacity: .14; }
-.tip-moment { color: var(--text); line-height: 1.5; }
-.tip-moment::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--moment); margin-right: 8px; vertical-align: 1px; }
+.moment-dot { stroke: var(--ink-1); stroke-width: 2; }
+.moment-line { stroke-width: 1; opacity: .22; }
 
 .other-form { display: flex; flex-direction: column; gap: 12px; }
 .other-quick { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -932,6 +930,7 @@ a.btn { text-decoration: none; }
   font-size: 13.5px; font-weight: 600;
 }
 .quick-chip small { color: var(--muted); font-weight: 500; }
+.quick-chip .key-dot { width: 9px; height: 9px; }
 .quick-chip.on { border-color: var(--moment); color: var(--text); }
 
 .other-list { display: flex; flex-direction: column; }
@@ -945,17 +944,15 @@ a.btn { text-decoration: none; }
 .other-row:hover { background: var(--ink-2); }
 .other-date { font-size: 12.5px; color: var(--muted); padding-top: 2px; }
 .other-main { display: flex; flex-direction: column; min-width: 0; }
-.other-title { font-size: 14.5px; font-weight: 600; }
+.other-title { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; }
+.other-title .key-bar, .other-title .key-dot { margin-top: 1px; }
 .other-note { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
 .other-mood { font-size: 12px; font-weight: 700; color: var(--on-accent); padding: 2px 8px; border-radius: 99px; font-variant-numeric: tabular-nums; }
 
 /* periods under "Anderes" */
 .key-bar.moment, .med-swatch.moment.span { background: var(--moment); }
 .med-swatch.moment.span { width: 18px; height: 8px; border-radius: 4px; }
-.moment-span { fill: var(--moment); opacity: .75; }
-.moment-span.running { opacity: 1; }
-.moment-band { fill: var(--moment); opacity: .06; pointer-events: none; }
-.tip-moment.span::before { width: 12px; height: 6px; border-radius: 3px; }
+.moment-band { opacity: .1; pointer-events: none; }
 .chip.running { margin-left: 8px; vertical-align: 2px; padding: 1px 7px; font-size: 11px; }
-.chip.running::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--moment); }
+.chip.running::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
 .other-row.span .other-date { color: var(--text-2); }

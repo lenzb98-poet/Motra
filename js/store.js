@@ -255,6 +255,18 @@ export function deleteMoment(id) {
   commit();
 }
 
+// Every title gets its own color from the medication palette (0..7). The order is the order of
+// first use, so the colors are the same on all devices and don't change between ranges.
+export function momentColors() {
+  const first = new Map();
+  for (const m of state.moments) {
+    const k = m.title.toLowerCase();
+    if (!first.has(k) || m.date < first.get(k)) first.set(k, m.date);
+  }
+  const order = [...first].sort((a, b) => a[1].localeCompare(b[1]) || (a[0] < b[0] ? -1 : 1));
+  return new Map(order.map(([k], i) => [k, i % 8]));
+}
+
 // Titles used so far, most frequent first (for the quick buttons).
 export function momentTitles() {
   const counts = new Map();

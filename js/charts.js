@@ -424,28 +424,35 @@ export function medLegend(el, show = 'all') {
 
 export function momentsChart(container, { from, to }) {
   const moments = store.momentsIn(from, to);
-  const days = moments.filter(m => !m.span);
-  const spans = moments.filter(m => m.span);
-  // Periods get lanes like medications; overlapping ones are stacked.
-  const laneEnds = [];
-  const spanLane = new Map();
-  for (const m of spans) {
-    let lane = laneEnds.findIndex(end => end < m.date);
-    if (lane < 0) { lane = laneEnds.length; laneEnds.push(''); }
-    laneEnds[lane] = store.momentLast(m);
-    spanLane.set(m, lane);
-  }
-  const width = Math.max(280, container.clientWidth);
+  const colors = store.momentColors();
+  const colorOf = m => `var(--c${(colors.get(m.title.toLowerCase()) ?? 0) + 1})`;
   const total = diffDays(from, to) + 1;
   const hasMood = store.rangeStats(from, to).count > 0;
   if (!moments.length && !hasMood) return emptyState(container, 'Sobald du Stimmung und etwas unter „Anderes“ eingetragen hast, siehst du hier beides zusammen.');
 
+  // One lane per title, like the medications: periods first, then titles that only have single days.
+  const groups = new Map();
+  for (const m of moments) {
+    const key = m.title.toLowerCase();
+    const g = groups.get(key) ?? { key, name: m.title, items: [], span: false, first: m.date };
+    g.items.push(m);
+    g.name = m.title;
+    if (m.span) g.span = true;
+    if (m.date < g.first) g.first = m.date;
+    groups.set(key, g);
+  }
+  const lanes = [...groups.values()].sort((a, b) => Number(b.span) - Number(a.span) || a.first.localeCompare(b.first) || (a.key < b.key ? -1 : 1));
+  const firstDay = lanes.findIndex(l => !l.span);
+  const groupGap = lanes.some(l => l.span) && firstDay >= 0 ? 22 : 0;
+  const LANE = 38;
+  const laneTop = (i, base) => base + i * LANE + (groupGap && i >= firstDay ? groupGap : 0);
+
+  const width = Math.max(280, container.clientWidth);
   const M = { top: 12, right: 14, left: 30 };
-  const plotH = 170;
-  const LANE = 12;
-  const spanTop = M.top + plotH + 18;               // lanes for periods below the plot
-  const rowY = spanTop + laneEnds.length * LANE + (laneEnds.length ? 10 : 4);   // row of day markers
-  const axisY = rowY + 26;
+  const plotH = 150;
+  const lanesTop = M.top + plotH + 18;
+  const lanesBottom = laneTop(lanes.length, lanesTop);
+  const axisY = lanesBottom + 16;
   const H = axisY + (total <= 10 ? 22 : 8);
   const left = M.left, right = width - M.right, plotW = right - left;
   const x = scaleX(from, to, left, plotW);
@@ -453,24 +460,19 @@ export function momentsChart(container, { from, to }) {
   const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
   yAxis(svg, y, left, right);
 
-  // one marker per day with something entered; a hairline up into the plot
-  const byDay = new Map();
-  for (const m of days) byDay.set(m.date, [...(byDay.get(m.date) ?? []), m]);
+  // behind the mood curve: a faint band per period and a hairline per single day, in the entry's color
   const marks = s('g', { class: 'moments' });
-  for (const m of spans) {
-    const a = x(m.date < from ? from : m.date) - 3;
-    const b = x(store.momentLast(m) > to ? to : store.momentLast(m)) + 3;
-    const top = spanTop + spanLane.get(m) * LANE;
-    marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band' }));
-    marks.append(s('rect', { x: a, y: top, width: Math.max(6, b - a), height: 8, rx: 4, class: `moment-span${store.momentRunning(m) ? ' running' : ''}` }));
-  }
-  for (const [date, list] of byDay) {
-    const px = x(date);
-    marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: rowY - 6, class: 'moment-line' }));
-    marks.append(s('circle', { cx: px, cy: rowY, r: list.length > 1 ? 5 : 4, class: 'moment-dot' }));
+  for (const m of moments) {
+    if (m.span) {
+      const a = x(m.date < from ? from : m.date, 0);
+      const b = x(store.momentLast(m) > to ? to : store.momentLast(m), 1);
+      marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
+    } else {
+      const px = x(m.date, 0.5);
+      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: M.top + plotH, class: 'moment-line', style: `stroke:${colorOf(m)}` }));
+    }
   }
   svg.append(marks);
-  svg.append(s('line', { x1: left, x2: right, y1: rowY, y2: rowY, class: 'lane-track' }));
 
   const dotG = s('g');
   const trendPts = [];
@@ -484,9 +486,31 @@ export function momentsChart(container, { from, to }) {
   for (const run of runs(trendPts, 1)) svg.append(s('path', { d: smoothPath(run.map(p => [x(p.date), y(p.value)])), class: 'line-trend' }));
   if (!hasMood) svg.append(s('text', { x: left + plotW / 2, y: M.top + plotH / 2, class: 'tick', 'text-anchor': 'middle' }, 'Keine Stimmungseinträge in diesem Zeitraum'));
 
+  // lanes with the title as label: bars for periods, dots for single days
+  const laneG = s('g', { class: 'lanes' });
+  lanes.forEach((l, i) => {
+    const ly = laneTop(i, lanesTop);
+    if (groupGap && i === 0) laneG.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'ZEITRÄUME'));
+    if (groupGap && i === firstDay) laneG.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'EINZELNE TAGE'));
+    laneG.append(s('text', { x: left, y: ly + 10, class: 'lane-name' }, l.name));
+    laneG.append(s('line', { x1: left, x2: right, y1: ly + 25, y2: ly + 25, class: 'lane-track' }));
+    for (const m of l.items) {
+      if (m.span) {
+        const last = store.momentLast(m);
+        const xs = x(m.date < from ? from : m.date, 0);
+        const xe = x(last > to ? to : last, 1);
+        const open = m.end == null || m.end > to;
+        laneG.append(s('path', { d: barPath(xs, ly + 20, Math.max(3, xe - xs), 10, m.date >= from, !open), style: `fill:${colorOf(m)}`, class: 'lane-bar' }));
+      } else {
+        laneG.append(s('circle', { cx: x(m.date, 0.5), cy: ly + 25, r: total > 120 ? 3 : 4.5, style: `fill:${colorOf(m)}`, class: 'moment-dot' }));
+      }
+    }
+  });
+  svg.append(laneG);
+
   xAxis(svg, dateTicks(from, to, x), axisY);
   attachHover(svg, {
-    from, to, left, width: plotW, top: M.top, bottom: rowY + 10, x,
+    from, to, left, width: plotW, top: M.top, bottom: lanesBottom, x,
     label: `Stimmung und andere Einträge vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
     describe: date => {
       const box = h('div', null, tipHead(date));
@@ -498,7 +522,7 @@ export function momentsChart(container, { from, to }) {
       const list = moments.filter(m => store.momentCovers(m, date));
       if (list.length) {
         box.append(h('div', { class: 'tip-sep' }));
-        for (const m of list) box.append(h('div', { class: `tip-moment${m.span ? ' span' : ''}` }, m.title));
+        for (const m of list) box.append(tipRow(h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: colorOf(m) } }), m.span ? 'Zeitraum' : 'Tag', m.title));
       }
       return box;
     },
@@ -506,11 +530,22 @@ export function momentsChart(container, { from, to }) {
   container.replaceChildren(svg);
 }
 
-export function momentsLegend(el) {
-  el.replaceChildren(...[
+// Legend like the medications: one entry per title in the range, in its color.
+export function momentsLegend(el, { from, to }) {
+  const colors = store.momentColors();
+  const seen = new Map();
+  for (const m of store.momentsIn(from, to)) {
+    const k = m.title.toLowerCase();
+    const cur = seen.get(k) ?? { title: m.title, span: false, first: m.date };
+    if (m.span) cur.span = true;
+    if (m.date < cur.first) cur.first = m.date;
+    seen.set(k, cur);
+  }
+  const titles = [...seen].sort((a, b) => Number(b[1].span) - Number(a[1].span) || a[1].first.localeCompare(b[1].first) || (a[0] < b[0] ? -1 : 1));
+  el.replaceChildren(
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
-    h('span', { class: 'legend-item' }, h('span', { class: 'key-dot moment' }), 'Einzelner Tag'),
-    store.getState().moments.some(m => m.span) ? h('span', { class: 'legend-item' }, h('span', { class: 'key-bar moment' }), 'Zeitraum') : null,
-  ].filter(Boolean));
+    ...titles.map(([k, v]) => h('span', { class: 'legend-item' },
+      h('span', { class: v.span ? 'key-bar' : 'key-dot', style: { background: `var(--c${(colors.get(k) ?? 0) + 1})` } }), v.title)),
+  );
 }
