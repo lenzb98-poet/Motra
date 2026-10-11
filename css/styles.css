@@ -845,3 +845,30 @@ textarea:focus, .field input:focus { outline: none; border-color: var(--accent);
 }
 .recovery code { font: 600 15px/1.4 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .05em; user-select: all; -webkit-user-select: all; }
 a.btn { text-decoration: none; }
+
+/* ---------------- reminders ---------------- */
+
+.reminder-rows { display: flex; flex-direction: column; gap: 8px; }
+.reminder-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--radius);
+  background: var(--ink-0);
+}
+.reminder-toggle { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; cursor: pointer; min-height: 40px; }
+.reminder-toggle input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.reminder-row input[type="time"] {
+  -webkit-appearance: none; appearance: none;
+  min-width: 0; width: 7.5em;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ink-3);
+  background: var(--ink-1);
+  color: var(--text);
+  font: 600 16px/1 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.reminder-row input[type="time"]:disabled { opacity: .4; }
+.reminder-row input[type="time"]::-webkit-date-and-time-value { text-align: center; }

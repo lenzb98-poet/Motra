@@ -16,6 +16,7 @@ Die Daten liegen zuerst im Browser auf deinem Gerät (`localStorage`). Optional 
   - für jeden Beginn, jede Dosisänderung und jedes Absetzen: 4 Wochen vorher im Vergleich zu Woche 3 bis 6 danach (viele Medikamente wirken erst nach einigen Wochen)
 - **Daten:** Sicherung als JSON herunterladen und wiederherstellen. Export als CSV-Tabelle für den Arzttermin. Beispieldaten zum Ausprobieren.
 - **Synchronisierung (optional):** In den Einstellungen mit E-Mail, Passwort und Code aus einer Authenticator-App anmelden. Danach gleicht Motra beim Öffnen, nach jedem Speichern und alle zwei Minuten ab.
+- **Erinnerungen:** Echte Mitteilungen zu frei wählbaren Zeiten für Morgen, Mittag und Abend, auch wenn die App geschlossen ist. Ist eine Tageszeit schon eingetragen, entfällt die Erinnerung. Kein Konto nötig; auf iPhone/iPad muss Motra auf dem Home-Bildschirm liegen.
 - **Offline und installierbar:** Die App lässt sich zum Home-Bildschirm hinzufügen (PWA) und funktioniert danach auch ohne Internet.
 
 ## Online stellen mit GitHub Pages
@@ -41,6 +42,10 @@ Danach in Motra: Einstellungen → **Synchronisierung einrichten** → E-Mail �
 
 **Zugang verloren?** Ist die Authenticator-App weg und kein Wiederherstellungscode mehr da, lässt sich das Konto im Cloudflare-Dashboard zurücksetzen (D1 → motra → Console): `DELETE FROM users; DELETE FROM sessions;`. Danach richtest du Passwort und Zwei-Faktor neu ein, die gespeicherten Daten bleiben erhalten.
 
+## Erinnerungen
+
+Der Worker verschickt Mitteilungen per Web Push (`worker/push.js`). Ein Cron-Trigger (`wrangler.jsonc`, jede Minute) prüft, welche Erinnerungen fällig sind. Die dafür nötigen VAPID-Schlüssel erzeugt der Worker beim ersten Aufruf selbst und speichert sie in D1 (Tabelle `config`). Es sind keine weiteren Einstellungen nötig. Gespeichert werden pro Gerät nur die Push-Adresse, die Uhrzeiten, die Zeitzone und welche Tageszeiten heute schon erledigt sind, keine Stimmungen oder Notizen.
+
 ## Lokal starten
 
 Es gibt keinen Build-Schritt. Ein beliebiger statischer Server reicht:
@@ -63,6 +68,8 @@ Dann `http://localhost:8000` öffnen. Mit Sync-Server: eine Datei `.dev.vars` mi
 | `js/util.js` | Datums- und DOM-Hilfen |
 | `js/sync.js` | Abgleich mit dem Server |
 | `worker/index.js` | Sync-Server: Login, Zwei-Faktor, verschlüsselte Ablage |
+| `worker/push.js` | Erinnerungen: Web Push, Zeitplan |
+| `js/push.js` | Erinnerungen auf dem Gerät einrichten |
 | `sw.js` | Service Worker für den Offline-Betrieb |
 
 Nach Änderungen an den Dateien die Versionsnummer `CACHE` in `sw.js` erhöhen, damit installierte Apps die neue Version laden.

@@ -8,6 +8,8 @@
 //   DATA_KEY        base64 of 32 random bytes, encrypts data and 2FA secrets at rest
 //   SETUP_CODE      one-time code needed to set the very first password of an account
 
+import { PUSH_SCHEMA, PushError, pushKey, pushSubscribe, pushResubscribe, pushUnsubscribe, pushDone, pushTest, runReminders } from './push.js';
+
 const SESSION_DAYS = 90;
 const PENDING_MINUTES = 15;
 const MAX_FAILS = 5;
@@ -50,7 +52,7 @@ const SCHEMA = [
 ];
 
 let schemaReady = null;
-const ensureSchema = db => (schemaReady ??= db.batch(SCHEMA.map(sql => db.prepare(sql))).catch(e => { schemaReady = null; throw e; }));
+const ensureSchema = db => (schemaReady ??= db.batch([...SCHEMA, ...PUSH_SCHEMA].map(sql => db.prepare(sql))).catch(e => { schemaReady = null; throw e; }));
 
 class HttpError extends Error {
   constructor(status, error, extra = {}) {
@@ -68,9 +70,16 @@ export default {
       return await handleApi(request, env, url);
     } catch (e) {
       if (e instanceof HttpError) return json(e.body, e.status);
+      if (e instanceof PushError) return json({ error: e.message }, e.status);
       console.error(e);
       return json({ error: 'server' }, 500);
     }
+  },
+
+  // Cron trigger (every minute): sends due reminders.
+  async scheduled(event, env, ctx) {
+    if (!env.DB) return;
+    ctx.waitUntil(ensureSchema(env.DB).then(() => runReminders(env)).catch(e => console.error('reminders', e)));
   },
 };
 
@@ -84,6 +93,9 @@ async function handleApi(request, env, url) {
     if (origin && origin !== url.origin) throw new HttpError(403, 'origin');
     if (request.headers.get('X-Motra') !== '1') throw new HttpError(403, 'header');
   }
+
+  // Reminders work without an account, so they don't need the sync settings.
+  if (url.pathname.startsWith('/api/push/')) return handlePush(request, env, url, route);
 
   if (!configured(env)) {
     if (route === 'GET /api/status') return json({ configured: false, missing: missingSettings(env), user: null });
@@ -105,6 +117,28 @@ async function handleApi(request, env, url) {
     case 'GET /api/data': return getData(request, env);
     case 'PUT /api/data': return putData(request, env);
     case 'POST /api/logout': return logout(request, env);
+    default: throw new HttpError(404, 'not_found');
+  }
+}
+
+/* ---------------- reminders ---------------- */
+
+async function handlePush(request, env, url, route) {
+  if (!env.DB) throw new HttpError(503, 'not_configured');
+  await ensureSchema(env.DB);
+  // Only for local tests: extra push endpoint hosts, e.g. "127.0.0.1:9999".
+  const testHosts = (env.PUSH_TEST_HOSTS || '').split(',').map(s => s.trim()).filter(Boolean);
+  switch (route) {
+    case 'GET /api/push/key': return json(await pushKey(env));
+    case 'POST /api/push/subscribe': return json(await pushSubscribe(env, await body(request), url.origin, testHosts));
+    case 'POST /api/push/resubscribe': return json(await pushResubscribe(env, await body(request), testHosts));
+    case 'POST /api/push/unsubscribe': return json(await pushUnsubscribe(env, await body(request), testHosts));
+    case 'POST /api/push/done': return json(await pushDone(env, await body(request), testHosts));
+    case 'POST /api/push/test': {
+      const data = await body(request);
+      await attempt(env, `pushtest:${clientIp(request)}`); // a few test messages, then a pause
+      return json(await pushTest(env, data, testHosts));
+    }
     default: throw new HttpError(404, 'not_found');
   }
 }

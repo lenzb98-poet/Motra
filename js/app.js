@@ -1,5 +1,6 @@
 import * as store from './store.js';
 import * as sync from './sync.js';
+import * as push from './push.js';
 import { moodChart, moodLegend, medChart, medLegend, eventText } from './charts.js';
 import {
   h, s, icon, todayKey, addDays, diffDays, formatLong, formatDayMonth, formatShort, formatWeekday,
@@ -792,6 +793,7 @@ function settingsSheet() {
       h('dt', null, 'Medikamente'), h('dd', null, String(st.meds.length)),
       h('dt', null, 'Letzte Sicherung'), h('dd', null, last ? formatShort(last.slice(0, 10)) : 'noch nie')),
 
+    remindersSection(),
     syncSection(),
 
     h('section', { class: 'sheet-section' },
@@ -869,6 +871,114 @@ function confirmImport(text) {
 $('#btn-settings').addEventListener('click', settingsSheet);
 $('#btn-add-med').addEventListener('click', addMedSheet);
 $('#btn-more-entries').addEventListener('click', () => { listDays += 14; renderEntryList(); });
+
+/* ---------------- reminders ---------------- */
+
+const SLOT_NAMES = { morning: 'Morgen', noon: 'Mittag', evening: 'Abend' };
+
+// The "Erinnerungen" part of the settings sheet.
+function remindersSection() {
+  const box = h('section', { class: 'sheet-section', id: 'reminders-section' }, h('h3', null, 'Erinnerungen'));
+  const state = push.support();
+  if (state === 'install') {
+    box.append(h('p', { class: 'sheet-text' }, 'Auf dem iPhone und iPad gibt es Erinnerungen nur, wenn Motra auf dem Home-Bildschirm liegt: in Safari auf Teilen tippen, „Zum Home-Bildschirm“ wählen und Motra dann von dort öffnen.'));
+    return box;
+  }
+  if (state === 'unsupported') {
+    box.append(h('p', { class: 'sheet-text' }, 'Dieser Browser kann keine Mitteilungen anzeigen.'));
+    return box;
+  }
+  if (state === 'denied') {
+    box.append(h('p', { class: 'sheet-text' }, 'Mitteilungen sind für Motra blockiert. Erlaube sie in den Einstellungen deines Geräts (iPhone: Einstellungen → Mitteilungen → Motra) und öffne Motra danach neu.'));
+    return box;
+  }
+
+  const conf = push.settings();
+  const rows = Object.keys(SLOT_NAMES).map(slot => {
+    const check = h('input', { type: 'checkbox', id: `rem-on-${slot}`, checked: !conf.off.includes(slot) });
+    const time = h('input', { type: 'time', id: `rem-time-${slot}`, value: conf.times[slot] || push.DEFAULT_TIMES[slot], step: 300 });
+    return { slot, check, time, el: h('div', { class: 'reminder-row' },
+      h('label', { class: 'reminder-toggle', for: check.id }, check, h('span', null, SLOT_NAMES[slot])), time) };
+  });
+  const collect = () => ({
+    times: Object.fromEntries(rows.map(r => [r.slot, r.time.value || push.DEFAULT_TIMES[r.slot]])),
+    off: rows.filter(r => !r.check.checked).map(r => r.slot),
+  });
+  const err = h('p', { class: 'form-error', hidden: true, role: 'alert' });
+  const showError = msg => { err.textContent = msg; err.hidden = false; };
+  let saveTimer;
+  for (const r of rows) {
+    const changed = () => {
+      r.time.disabled = !r.check.checked;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async () => {
+        err.hidden = true;
+        const { times, off } = collect();
+        try { await push.setTimes(times, off); if (push.isEnabled()) toast('Erinnerungen gespeichert'); } catch (e) { showError('Speichern hat nicht geklappt. Bist du online?'); }
+      }, 500);
+    };
+    r.check.addEventListener('change', changed);
+    r.time.addEventListener('change', changed);
+    r.time.disabled = !r.check.checked;
+  }
+
+  const text = h('p', { class: 'sheet-text' }, push.isEnabled()
+    ? 'Aktiv auf diesem Gerät. Hast du eine Tageszeit schon eingetragen, kommt dafür keine Erinnerung.'
+    : 'Motra erinnert dich zu deinen Zeiten an den Eintrag, auch wenn die App geschlossen ist. Hast du schon eingetragen, kommt keine Erinnerung.');
+  box.append(text, h('div', { class: 'reminder-rows' }, ...rows.map(r => r.el)), err);
+
+  const busy = async (btn, label, fn) => {
+    btn.disabled = true; const old = btn.textContent; btn.textContent = label;
+    try { await fn(); } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = old; } }
+  };
+  if (push.isEnabled()) {
+    const testBtn = h('button', { type: 'button', class: 'btn' }, 'Test-Mitteilung senden');
+    testBtn.addEventListener('click', () => busy(testBtn, 'Sendet …', async () => {
+      err.hidden = true;
+      try { await push.sendTest(); toast('Test-Mitteilung gesendet'); } catch (e) {
+        showError(e.status === 429 ? 'Genug getestet für den Moment. Versuch es in ein paar Minuten wieder.' : 'Die Test-Mitteilung konnte nicht gesendet werden.');
+      }
+    }));
+    box.append(testBtn, h('button', { type: 'button', class: 'btn ghost danger', onclick: async () => {
+      await push.disable(); toast('Erinnerungen ausgeschaltet'); settingsSheet();
+    } }, 'Erinnerungen ausschalten'));
+  } else {
+    const onBtn = h('button', { type: 'button', class: 'btn', disabled: true }, 'Erinnerungen einschalten');
+    // Check for the server now, so the tap can go straight to the permission prompt.
+    push.serverAvailable().then(ok => {
+      if (ok) onBtn.disabled = false;
+      else showError('An dieser Adresse gibt es keinen Motra-Server. Öffne Motra über deine Cloudflare-Adresse.');
+    });
+    onBtn.addEventListener('click', () => busy(onBtn, 'Einen Moment …', async () => {
+      err.hidden = true;
+      const { times, off } = collect();
+      push.setTimes(times, off); // only stores locally while reminders are off
+      try {
+        await push.enable();
+        toast('Erinnerungen sind an');
+        settingsSheet();
+      } catch (e) {
+        if (e.code === 'denied') settingsSheet();
+        else if (e.code === 'default') showError('Ohne deine Erlaubnis kann Motra keine Mitteilungen zeigen.');
+        else showError('Das Einschalten hat nicht geklappt. Bist du online?');
+      }
+    }));
+    box.append(onBtn);
+  }
+  return box;
+}
+
+// Opening Motra from a reminder: jump to that day and time of day.
+function openFromReminder(slot, date) {
+  if (!store.SLOT_IDS.includes(slot)) return;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(date || '') && date <= todayKey() ? date : todayKey();
+  if (form.dirty) return;
+  form.date = day;
+  form.slot = slot;
+  form.touched = true;
+  loadFormEntry();
+  if (location.hash !== '#heute') location.hash = '#heute'; else renderView();
+}
 
 /* ---------------- sync settings & login ---------------- */
 
@@ -1185,6 +1295,19 @@ sync.onChange(() => {
   }
 });
 sync.start();
+push.start();
+
+// Reminder taps: either the app starts with ?slot=…, or it was open and gets a message.
+{
+  const params = new URLSearchParams(location.search);
+  if (params.has('slot')) {
+    openFromReminder(params.get('slot'), params.get('date'));
+    history.replaceState(null, '', location.pathname + location.hash);
+  }
+  navigator.serviceWorker?.addEventListener('message', e => {
+    if (e.data?.type === 'motra-open') openFromReminder(e.data.slot, e.data.date);
+  });
+}
 initHeute();
 loadFormEntry();
 route();

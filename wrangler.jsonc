@@ -14,5 +14,6 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "motra", "database_id": "9c89c38d-1c53-473b-b3cd-9fb6082be325" }
   ],
+  "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true }
 }
