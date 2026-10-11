@@ -532,14 +532,44 @@ function renderEntryList() {
   more.hidden = dates.length <= listDays;
 }
 
-/* ================= MEDIKAMENTE ================= */
+/* ================= MEDIKAMENTE & THERAPIEN ================= */
+
+// Wording per kind: medications have a dose, therapies a frequency or type.
+const TERMS = {
+  med: {
+    kind: 'Medikament', group: 'Medikamente', dose: 'Dosis', newDose: 'Neue Dosis', noDose: 'Ohne Dosis',
+    change: 'Dosis ändern', stop: 'Absetzen', stopped: 'Abgesetzt', active: 'Nehme ich', restart: 'Wieder einnehmen',
+    since: 'Nehme ich seit', lastDay: 'Letzter Einnahmetag', last: 'zuletzt genommen am', periods: 'Einnahme-Zeiträume',
+    stillHint: 'Lass „Bis“ leer, solange du das Medikament noch nimmst.', namePh: 'z. B. Sertralin', dosePh: 'z. B. 50 mg',
+    newDosePh: 'z. B. 100 mg', del: 'Medikament löschen', doseToast: 'Neue Dosis gespeichert', stoppedHistory: 'Abgesetzt ab',
+    stopToast: n => `${n} als abgesetzt gespeichert`, stopTitle: n => `${n} absetzen`, doseTitle: n => `Dosis von ${n}`,
+    restartTitle: n => `${n} wieder einnehmen`, restartToast: n => `${n} wieder aufgenommen`,
+    stopText: 'Das Medikament bleibt mit seinem Verlauf erhalten. Du kannst es später wieder aufnehmen.',
+    startHint: 'Wenn du das Medikament schon länger nimmst, wähle das ungefähre Startdatum. So passt der Verlauf.',
+    withDays: 'an Tagen mit Einnahme', mostly: 'Im Zeitraum fast durchgehend eingenommen', rarely: 'Im Zeitraum kaum eingenommen.',
+  },
+  therapy: {
+    kind: 'Therapie', group: 'Therapien', dose: 'Häufigkeit / Art', newDose: 'Neue Häufigkeit / Art', noDose: 'Ohne Angabe',
+    change: 'Häufigkeit ändern', stop: 'Beenden', stopped: 'Beendet', active: 'Läuft', restart: 'Wieder aufnehmen',
+    since: 'Läuft seit', lastDay: 'Letzte Sitzung', last: 'zuletzt am', periods: 'Therapie-Zeiträume',
+    stillHint: 'Lass „Bis“ leer, solange die Therapie noch läuft.', namePh: 'z. B. Psychotherapie', dosePh: 'z. B. 1× pro Woche',
+    newDosePh: 'z. B. alle 2 Wochen', del: 'Therapie löschen', doseToast: 'Änderung gespeichert', stoppedHistory: 'Beendet ab',
+    stopToast: n => `${n} als beendet gespeichert`, stopTitle: n => `${n} beenden`, doseTitle: n => `${n} ändern`,
+    restartTitle: n => `${n} wieder aufnehmen`, restartToast: n => `${n} wieder aufgenommen`,
+    stopText: 'Die Therapie bleibt mit ihrem Verlauf erhalten. Du kannst sie später wieder aufnehmen.',
+    startHint: 'Wenn die Therapie schon länger läuft, wähle das ungefähre Startdatum. So passt der Verlauf.',
+    withDays: 'an Tagen mit laufender Therapie', mostly: 'Im Zeitraum fast durchgehend in Therapie', rarely: 'Im Zeitraum kaum in Therapie.',
+  },
+};
+const T = med => TERMS[med?.kind === 'therapy' ? 'therapy' : 'med'];
+const byKind = meds => [...meds].sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
 
 function medStatus(med) {
   const open = store.openPhase(med);
   const last = store.lastPhase(med);
   return open
     ? { active: true, dose: open.dose, text: `seit ${formatDayMonth(open.start)}` }
-    : { active: false, dose: last.dose, text: `zuletzt genommen am ${formatDayMonth(last.end)}` };
+    : { active: false, dose: last.dose, text: `${T(med).last} ${formatDayMonth(last.end)}` };
 }
 
 function medHistory(med) {
@@ -548,30 +578,38 @@ function medHistory(med) {
     if (ev.type === 'start') return `Begonnen ${d}${ev.dose ? ` mit ${ev.dose}` : ''}`;
     if (ev.type === 'restart') return `Wieder begonnen ${d}${ev.dose ? ` mit ${ev.dose}` : ''}`;
     if (ev.type === 'dose') return `${d}: ${ev.prevDose || '–'} → ${ev.dose || '–'}`;
-    return `Abgesetzt ab ${d}`;
+    return `${T(med).stoppedHistory} ${d}`;
   }).join(' · ');
+}
+
+function medCard(m) {
+  const st = medStatus(m);
+  const t = T(m);
+  return h('article', { class: 'card med-card' },
+    h('div', { class: 'med-head' },
+      h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }),
+      h('h3', { class: 'med-name' }, m.name),
+      h('span', { class: `chip${st.active ? ' active' : ''}` }, st.active ? t.active : t.stopped)),
+    h('div', { class: 'med-dose' }, h('strong', null, st.dose || t.noDose), h('span', null, st.text)),
+    h('p', { class: 'med-history' }, medHistory(m)),
+    h('div', { class: 'med-actions' },
+      st.active
+        ? [h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m) }, t.change),
+          h('button', { type: 'button', class: 'btn small', onclick: () => stopSheet(m) }, t.stop)]
+        : h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m, true) }, t.restart),
+      h('button', { type: 'button', class: 'btn small ghost', onclick: () => editSheet(m) }, 'Bearbeiten')));
 }
 
 function renderMedis() {
   const meds = store.getState().meds;
-  $('#med-list').replaceChildren(...meds.map(m => {
-    const st = medStatus(m);
-    return h('article', { class: 'card med-card' },
-      h('div', { class: 'med-head' },
-        h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }),
-        h('h3', { class: 'med-name' }, m.name),
-        h('span', { class: `chip${st.active ? ' active' : ''}` }, st.active ? 'Nehme ich' : 'Abgesetzt')),
-      h('div', { class: 'med-dose' }, h('strong', null, st.dose || 'Ohne Dosis'), h('span', null, st.text)),
-      h('p', { class: 'med-history' }, medHistory(m)),
-      h('div', { class: 'med-actions' },
-        st.active
-          ? [h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m) }, 'Dosis ändern'),
-            h('button', { type: 'button', class: 'btn small', onclick: () => stopSheet(m) }, 'Absetzen')]
-          : h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m, true) }, 'Wieder einnehmen'),
-        h('button', { type: 'button', class: 'btn small ghost', onclick: () => editSheet(m) }, 'Bearbeiten')));
-  }));
+  const groups = ['med', 'therapy'].map(kind => ({ kind, items: meds.filter(m => (m.kind === 'therapy' ? 'therapy' : 'med') === kind) }))
+    .filter(g => g.items.length);
+  $('#med-list').replaceChildren(...groups.flatMap(g => [
+    groups.length > 1 ? h('h3', { class: 'med-group' }, TERMS[g.kind].group) : null,
+    ...g.items.map(medCard),
+  ].filter(Boolean)));
   if (!meds.length) {
-    $('#med-list').replaceChildren(h('p', { class: 'empty-text' }, 'Trag deine Medikamente mit Dosis und Startdatum ein. Danach siehst du unten, wie deine Stimmung dazu verlaufen ist.'));
+    $('#med-list').replaceChildren(h('p', { class: 'empty-text' }, 'Trag deine Medikamente und Therapien mit Startdatum ein. Danach siehst du unten, wie deine Stimmung dazu verlaufen ist.'));
   }
 
   segmented($('#range-medis'), prefs.rangeMedis, id => { prefs.rangeMedis = id; savePrefs(); renderMedis(); });
@@ -583,11 +621,12 @@ function renderMedis() {
 }
 
 function renderCompare(from, to) {
-  const meds = store.getState().meds;
+  const meds = byKind(store.getState().meds);
   const el = $('#compare');
-  if (!meds.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Noch keine Medikamente eingetragen.')); return; }
+  if (!meds.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Noch keine Medikamente oder Therapien eingetragen.')); return; }
   const MIN = 5;
   el.replaceChildren(...meds.map(m => {
+    const t = T(m);
     const c = store.medComparison(m, from, to);
     const row = (label, data, cls) => h('div', { class: 'hbar' },
       h('span', { class: 'hbar-label' }, label),
@@ -595,14 +634,15 @@ function renderCompare(from, to) {
       h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
     let hint = null;
     if (c.with.days < MIN && c.without.days < MIN) hint = 'Zu wenige Tage mit Einträgen im Zeitraum.';
-    else if (c.without.days < MIN) hint = 'Im Zeitraum fast durchgehend eingenommen, deshalb gibt es kaum Vergleichstage. Wähle einen längeren Zeitraum.';
-    else if (c.with.days < MIN) hint = 'Im Zeitraum kaum eingenommen.';
+    else if (c.without.days < MIN) hint = `${t.mostly}, deshalb gibt es kaum Vergleichstage. Wähle einen längeren Zeitraum.`;
+    else if (c.with.days < MIN) hint = t.rarely;
     else {
       const d = c.with.avg - c.without.avg;
-      hint = h('span', null, 'Unterschied ', deltaEl(d), ' an Tagen mit Einnahme.');
+      hint = h('span', null, 'Unterschied ', deltaEl(d), ` ${t.withDays}.`);
     }
     return h('div', { class: 'compare-block' },
-      h('h3', null, h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }), m.name),
+      h('h3', null, h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }), m.name,
+        m.kind === 'therapy' ? h('span', { class: 'kind-tag' }, 'Therapie') : null),
       h('div', { class: 'compare-rows' }, row('Mit', c.with, 'with'), row('Ohne', c.without, 'without')),
       h('p', { class: 'compare-hint' }, hint));
   }));
@@ -612,7 +652,7 @@ function renderEvents() {
   const el = $('#events');
   const events = store.getState().meds.flatMap(m => store.medEvents(m)).filter(e => e.date <= todayKey())
     .sort((a, b) => b.date.localeCompare(a.date));
-  if (!events.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Hier erscheint jeder Beginn, jede Dosisänderung und jedes Absetzen mit dem Stimmungsvergleich davor und danach.')); return; }
+  if (!events.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Hier erscheint jeder Beginn, jede Änderung von Dosis oder Häufigkeit und jedes Ende mit dem Stimmungsvergleich davor und danach.')); return; }
   el.replaceChildren(...events.slice(0, 20).map(ev => {
     const c = store.eventComparison(ev.date);
     let body;
@@ -642,25 +682,38 @@ function dateInputEl(id, value, { min, max } = {}) {
   return el;
 }
 
-function addMedSheet() {
-  const name = h('input', { id: 'med-name', type: 'text', placeholder: 'z. B. Sertralin', maxlength: 60, required: true, autocomplete: 'off' });
-  const dose = h('input', { id: 'med-dose', type: 'text', placeholder: 'z. B. 50 mg', maxlength: 60, autocomplete: 'off' });
+function addMedSheet(kind = 'med') {
+  const t = TERMS[kind];
+  const name = h('input', { id: 'med-name', type: 'text', placeholder: t.namePh, maxlength: 60, required: true, autocomplete: 'off' });
+  const dose = h('input', { id: 'med-dose', type: 'text', placeholder: t.dosePh, maxlength: 60, autocomplete: 'off' });
   const start = dateInputEl('med-start', todayKey());
   const err = h('p', { class: 'form-error', hidden: true });
+  // Switching the kind keeps what was typed and only changes labels and hints.
+  const kindSwitch = h('div', { class: 'segmented kind-switch', role: 'radiogroup', 'aria-label': 'Art' },
+    ...Object.entries(TERMS).map(([k, v]) => h('button', {
+      type: 'button', role: 'radio', 'aria-checked': String(k === kind),
+      onclick: () => {
+        if (k === kind) return;
+        const keep = { name: name.value, dose: dose.value, start: start.value };
+        addMedSheet(k);
+        $('#med-name').value = keep.name; $('#med-dose').value = keep.dose; $('#med-start').value = keep.start;
+      },
+    }, v.kind)));
   const f = h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
     if (!name.value.trim()) { err.textContent = 'Bitte gib einen Namen ein.'; err.hidden = false; return; }
     if (!start.value) { err.textContent = 'Bitte wähle ein Startdatum.'; err.hidden = false; return; }
-    store.addMed({ name: name.value, dose: dose.value, start: start.value });
+    store.addMed({ name: name.value, dose: dose.value, start: start.value, kind });
     closeSheet();
     toast(`${name.value.trim()} hinzugefügt`);
   } },
+  kindSwitch,
   field('Name', name),
-  h('div', { class: 'field-row' }, field('Dosis', dose), field('Nehme ich seit', start)),
-  h('p', { class: 'sheet-text' }, 'Wenn du das Medikament schon länger nimmst, wähle das ungefähre Startdatum. So passt der Verlauf.'),
+  h('div', { class: 'field-row' }, field(t.dose, dose), field(t.since, start)),
+  h('p', { class: 'sheet-text' }, t.startHint),
   err,
   h('div', { class: 'sheet-actions' }, h('button', { type: 'submit', class: 'btn primary' }, 'Hinzufügen')));
-  openSheet('Medikament hinzufügen', f);
+  openSheet(`${t.kind} hinzufügen`, f);
   setTimeout(() => name.focus(), 50);
 }
 
@@ -668,19 +721,20 @@ function doseSheet(med, restart = false) {
   const open = store.openPhase(med);
   const last = store.lastPhase(med);
   const min = restart ? addDays(last.end, 1) : open.start;
-  const dose = h('input', { id: 'dose-new', type: 'text', value: restart ? last.dose : '', placeholder: 'z. B. 100 mg', maxlength: 60, autocomplete: 'off' });
+  const t = T(med);
+  const dose = h('input', { id: 'dose-new', type: 'text', value: restart ? last.dose : '', placeholder: t.newDosePh, maxlength: 60, autocomplete: 'off' });
   const date = dateInputEl('dose-date', todayKey() < min ? min : todayKey(), { min });
   const f = h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
     if (!date.value || date.value < min) return;
     store.changeDose(med.id, dose.value, date.value);
     closeSheet();
-    toast(restart ? `${med.name} wieder aufgenommen` : 'Neue Dosis gespeichert');
+    toast(restart ? t.restartToast(med.name) : t.doseToast);
   } },
-  restart ? null : h('p', { class: 'sheet-text' }, `Aktuell: ${open.dose || 'ohne Dosis'} seit ${formatShort(open.start)}.`),
-  h('div', { class: 'field-row' }, field(restart ? 'Dosis' : 'Neue Dosis', dose), field(restart ? 'Wieder ab' : 'Gilt ab', date)),
+  restart ? null : h('p', { class: 'sheet-text' }, `Aktuell: ${open.dose || t.noDose.toLowerCase()} seit ${formatShort(open.start)}.`),
+  h('div', { class: 'field-row' }, field(restart ? t.dose : t.newDose, dose), field(restart ? 'Wieder ab' : 'Gilt ab', date)),
   h('div', { class: 'sheet-actions' }, h('button', { type: 'submit', class: 'btn primary' }, 'Speichern')));
-  openSheet(restart ? `${med.name} wieder einnehmen` : `Dosis von ${med.name}`, f);
+  openSheet(restart ? t.restartTitle(med.name) : t.doseTitle(med.name), f);
   setTimeout(() => dose.focus(), 50);
 }
 
@@ -692,12 +746,12 @@ function stopSheet(med) {
     if (!date.value) return;
     store.stopMed(med.id, date.value);
     closeSheet();
-    toast(`${med.name} als abgesetzt gespeichert`);
+    toast(T(med).stopToast(med.name));
   } },
-  field('Letzter Einnahmetag', date),
-  h('p', { class: 'sheet-text' }, 'Das Medikament bleibt mit seinem Verlauf erhalten. Du kannst es später wieder aufnehmen.'),
-  h('div', { class: 'sheet-actions' }, h('button', { type: 'submit', class: 'btn primary' }, 'Absetzen')));
-  openSheet(`${med.name} absetzen`, f);
+  field(T(med).lastDay, date),
+  h('p', { class: 'sheet-text' }, T(med).stopText),
+  h('div', { class: 'sheet-actions' }, h('button', { type: 'submit', class: 'btn primary' }, T(med).stop)));
+  openSheet(T(med).stopTitle(med.name), f);
 }
 
 function editSheet(med) {
@@ -708,11 +762,11 @@ function editSheet(med) {
 
   const renderPhases = () => {
     list.replaceChildren(...phases.map((p, i) => {
-      const dose = h('input', { type: 'text', id: `ph-dose-${i}`, value: p.dose, maxlength: 60, placeholder: 'Dosis', oninput: e => { p.dose = e.target.value; } });
+      const dose = h('input', { type: 'text', id: `ph-dose-${i}`, value: p.dose, maxlength: 60, placeholder: T(med).dose, oninput: e => { p.dose = e.target.value; } });
       const start = h('input', { type: 'date', id: `ph-start-${i}`, value: p.start, max: todayKey(), oninput: e => { p.start = e.target.value; } });
       const end = h('input', { type: 'date', id: `ph-end-${i}`, value: p.end ?? '', max: todayKey(), oninput: e => { p.end = e.target.value || null; } });
       return h('div', { class: 'phase' },
-        field('Dosis', dose, 'dose'),
+        field(T(med).dose, dose, 'dose'),
         field('Von', start),
         field('Bis', end),
         phases.length > 1 ? h('button', { type: 'button', class: 'btn small ghost danger remove', onclick: () => { phases.splice(i, 1); renderPhases(); } }, 'Zeitraum entfernen') : null);
@@ -730,8 +784,8 @@ function editSheet(med) {
     toast('Änderungen gespeichert');
   } },
   field('Name', name),
-  h('div', { class: 'field' }, h('span', { class: 'label' }, 'Einnahme-Zeiträume'), list,
-    h('p', { class: 'sheet-text' }, 'Lass „Bis“ leer, solange du das Medikament noch nimmst.')),
+  h('div', { class: 'field' }, h('span', { class: 'label' }, T(med).periods), list,
+    h('p', { class: 'sheet-text' }, T(med).stillHint)),
   h('button', { type: 'button', class: 'btn dashed', onclick: () => {
     const lastP = phases[phases.length - 1];
     const startNew = lastP?.end ? addDays(lastP.end, 1) : todayKey();
@@ -741,7 +795,7 @@ function editSheet(med) {
   } }, icon('i-plus'), 'Zeitraum hinzufügen'),
   err,
   h('div', { class: 'sheet-actions' },
-    armedButton('Medikament löschen', 'Wirklich löschen? Nochmal tippen', () => { store.deleteMed(med.id); closeSheet(); toast(`${med.name} gelöscht`); }),
+    armedButton(T(med).del, 'Wirklich löschen? Nochmal tippen', () => { store.deleteMed(med.id); closeSheet(); toast(`${med.name} gelöscht`); }),
     h('button', { type: 'submit', class: 'btn primary' }, 'Speichern')));
   openSheet(`${med.name} bearbeiten`, f);
 }
@@ -790,7 +844,7 @@ function settingsSheet() {
       : 'Alles, was du einträgst, bleibt nur in diesem Browser auf diesem Gerät. Es wird nichts an einen Server geschickt.'),
     h('dl', { class: 'info-list' },
       h('dt', null, 'Einträge'), h('dd', null, String(st.entries.length)),
-      h('dt', null, 'Medikamente'), h('dd', null, String(st.meds.length)),
+      h('dt', null, 'Medikamente & Therapien'), h('dd', null, String(st.meds.length)),
       h('dt', null, 'Letzte Sicherung'), h('dd', null, last ? formatShort(last.slice(0, 10)) : 'noch nie')),
 
     remindersSection(),
@@ -808,7 +862,7 @@ function settingsSheet() {
 
     h('section', { class: 'sheet-section' },
       h('h3', null, 'Für den Arzttermin'),
-      h('p', { class: 'sheet-text' }, 'Eine Tabelle mit allen Einträgen und den Medikamenten des jeweiligen Tages. Sie öffnet sich in Excel, Numbers oder Google Tabellen.'),
+      h('p', { class: 'sheet-text' }, 'Eine Tabelle mit allen Einträgen und den Medikamenten und Therapien des jeweiligen Tages. Sie öffnet sich in Excel, Numbers oder Google Tabellen.'),
       h('button', { type: 'button', class: 'btn', onclick: async () => {
         if (await deliverFile(`motra-tabelle-${stamp}.csv`, store.exportCSV(), 'text/csv')) toast('Tabelle erstellt');
       } }, 'Als Tabelle exportieren (CSV)')),
@@ -851,9 +905,9 @@ function confirmImport(text) {
   }
   const cur = store.getState();
   openSheet('Sicherung wiederherstellen',
-    h('p', { class: 'sheet-text' }, `Die Sicherung enthält ${preview.entries.length} Einträge und ${preview.meds.length} Medikamente.`),
+    h('p', { class: 'sheet-text' }, `Die Sicherung enthält ${preview.entries.length} Einträge und ${preview.meds.length} Medikamente oder Therapien.`),
     cur.entries.length || cur.meds.length
-      ? h('p', { class: 'sheet-text' }, `Sie ersetzt deine aktuellen Daten (${cur.entries.length} Einträge, ${cur.meds.length} Medikamente).`)
+      ? h('p', { class: 'sheet-text' }, `Sie ersetzt deine aktuellen Daten (${cur.entries.length} Einträge, ${cur.meds.length} Medikamente oder Therapien).`)
       : null,
     h('div', { class: 'sheet-actions' },
       h('button', { type: 'button', class: 'btn ghost', onclick: settingsSheet }, 'Abbrechen'),
@@ -869,7 +923,7 @@ function confirmImport(text) {
 }
 
 $('#btn-settings').addEventListener('click', settingsSheet);
-$('#btn-add-med').addEventListener('click', addMedSheet);
+$('#btn-add-med').addEventListener('click', () => addMedSheet());
 $('#btn-more-entries').addEventListener('click', () => { listDays += 14; renderEntryList(); });
 
 /* ---------------- reminders ---------------- */

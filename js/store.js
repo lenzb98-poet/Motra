@@ -136,6 +136,7 @@ export function normalize(data) {
       name: m.name.trim().slice(0, 60),
       color: Number.isInteger(m.color) ? ((m.color % MED_COLORS) + MED_COLORS) % MED_COLORS : meds.length % MED_COLORS,
       phases,
+      kind: m.kind === 'therapy' ? 'therapy' : 'med',
       updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : EPOCH,
       ...(m.demo ? { demo: true } : {}),
     });
@@ -198,8 +199,12 @@ function nextColor() {
   return state.meds.length % MED_COLORS;
 }
 
-export function addMed({ name, dose, start }) {
-  state.meds.push({ id: uid(), name: name.trim(), color: nextColor(), phases: [{ id: uid(), dose: dose.trim(), start, end: null }], updatedAt: now() });
+// `kind` is 'med' (medication) or 'therapy'. Both use the same phases: dose holds the dose or the frequency.
+export function addMed({ name, dose, start, kind = 'med' }) {
+  state.meds.push({
+    id: uid(), name: name.trim(), kind: kind === 'therapy' ? 'therapy' : 'med', color: nextColor(),
+    phases: [{ id: uid(), dose: dose.trim(), start, end: null }], updatedAt: now(),
+  });
   commit();
 }
 
@@ -379,8 +384,9 @@ export function canonicalOf(data) {
 }
 
 const projectEntry = ({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt });
-const projectMed = ({ id, name, color, updatedAt, phases }) => ({
-  id, name, color, updatedAt, phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
+const projectMed = ({ id, name, kind, color, updatedAt, phases }) => ({
+  id, name, kind: kind === 'therapy' ? 'therapy' : 'med', color, updatedAt,
+  phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
 });
 
 function canonical(src) {
@@ -461,7 +467,7 @@ export function exportCSV() {
     const str = String(v ?? '');
     return /[";\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
   };
-  const rows = [['Datum', 'Wochentag', 'Tageszeit', 'Stimmung (1-5)', 'Stimmung', 'Notiz', 'Medikamente']];
+  const rows = [['Datum', 'Wochentag', 'Tageszeit', 'Stimmung (1-5)', 'Stimmung', 'Notiz', 'Medikamente & Therapien']];
   for (const e of state.entries) {
     const meds = state.meds
       .map(m => [m, activePhase(m, e.date)])
@@ -496,12 +502,13 @@ export function loadDemo() {
     { name: 'Quetiapin', phases: [{ dose: '25 mg', start: d(95), end: d(40) }] },
     { name: 'Vitamin D', phases: [{ dose: '1000 IE', start: d(140), end: null }] },
     { name: 'Melatonin', phases: [{ dose: '2 mg', start: d(30), end: null }] },
+    { name: 'Psychotherapie', kind: 'therapy', phases: [{ dose: '1× pro Woche', start: d(85), end: d(36) }, { dose: 'alle 2 Wochen', start: d(35), end: null }] },
   ];
   const used = new Set(state.meds.map(m => m.color));
   let color = 0;
   for (const m of meds) {
     while (used.has(color)) color++;
-    state.meds.push({ id: uid(), name: m.name, color: color++ % MED_COLORS, demo: true, phases: m.phases.map(p => ({ id: uid(), ...p })) });
+    state.meds.push({ id: uid(), name: m.name, kind: m.kind || 'med', color: color++ % MED_COLORS, demo: true, phases: m.phases.map(p => ({ id: uid(), ...p })) });
   }
   const existing = new Set(state.entries.map(e => e.date + '|' + e.slot));
   for (let i = 0; i < DAYS; i++) {

@@ -268,17 +268,21 @@ export function moodLegend(el) {
 /* ---------------- mood + medication chart ---------------- */
 
 export function medChart(container, { from, to }) {
-  const meds = store.getState().meds;
+  // Medications first, then therapies, each group in the order they were added.
+  const meds = [...store.getState().meds].sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
+  const groupGap = meds.some(m => m.kind === 'therapy') && meds.some(m => m.kind !== 'therapy') ? 22 : 0;
+  const firstTherapy = meds.findIndex(m => m.kind === 'therapy');
+  const laneTop = (i, base) => base + i * 44 + (firstTherapy >= 0 && i >= firstTherapy ? groupGap : 0);
   const width = Math.max(280, container.clientWidth);
   const total = diffDays(from, to) + 1;
   const hasMood = store.rangeStats(from, to).count > 0;
-  if (!meds.length && !hasMood) return emptyState(container, 'Sobald du Medikamente und ein paar Stimmungseinträge hast, siehst du hier beides übereinander.');
+  if (!meds.length && !hasMood) return emptyState(container, 'Sobald du Medikamente oder Therapien und ein paar Stimmungseinträge hast, siehst du hier beides übereinander.');
 
   const M = { top: 12, right: 14, left: 30 };
   const plotH = 150;
-  const laneH = 44;
   const lanesTop = M.top + plotH + 18;
-  const axisY = lanesTop + meds.length * laneH + 16;
+  const lanesBottom = laneTop(meds.length, lanesTop);
+  const axisY = lanesBottom + 16;
   const H = axisY + (total <= 10 ? 22 : 8);
   const left = M.left, right = width - M.right, plotW = right - left;
   const x = scaleX(from, to, left, plotW);
@@ -293,7 +297,7 @@ export function medChart(container, { from, to }) {
     for (const ev of store.medEvents(m)) {
       if (ev.date < from || ev.date > to) continue;
       const px = x(ev.date, 0);
-      markers.append(s('line', { x1: px, x2: px, y1: M.top, y2: lanesTop + meds.indexOf(m) * laneH + 16, class: 'marker', style: `stroke:var(--c${m.color + 1})` }));
+      markers.append(s('line', { x1: px, x2: px, y1: M.top, y2: laneTop(meds.indexOf(m), lanesTop) + 16, class: 'marker', style: `stroke:var(--c${m.color + 1})` }));
     }
   }
   svg.append(markers);
@@ -318,7 +322,9 @@ export function medChart(container, { from, to }) {
   // medication lanes
   const lanes = s('g', { class: 'lanes' });
   meds.forEach((m, i) => {
-    const ly = lanesTop + i * laneH;
+    const ly = laneTop(i, lanesTop);
+    if (groupGap && i === firstTherapy) lanes.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'THERAPIEN'));
+    if (groupGap && i === 0) lanes.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'MEDIKAMENTE'));
     lanes.append(s('text', { x: left, y: ly + 10, class: 'lane-name' }, m.name));
     lanes.append(s('line', { x1: left, x2: right, y1: ly + 21, y2: ly + 21, class: 'lane-track' }));
     let any = false;
@@ -350,8 +356,8 @@ export function medChart(container, { from, to }) {
   xAxis(svg, dateTicks(from, to, x), axisY);
 
   attachHover(svg, {
-    from, to, left, width: plotW, top: M.top, bottom: lanesTop + meds.length * laneH, x,
-    label: `Stimmung und Medikamente vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
+    from, to, left, width: plotW, top: M.top, bottom: lanesBottom, x,
+    label: `Stimmung, Medikamente und Therapien vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
     describe: date => {
       const box = h('div', null, tipHead(date));
       const avg = store.dayAverage(date);
@@ -366,7 +372,7 @@ export function medChart(container, { from, to }) {
           box.append(tipRow(h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } }), p.dose || '–', m.name));
         }
       } else if (meds.length) {
-        box.append(h('div', { class: 'tip-empty' }, 'Keine Medikamente'));
+        box.append(h('div', { class: 'tip-empty' }, 'Keine Medikamente oder Therapien'));
       }
       for (const m of meds) {
         for (const ev of store.medEvents(m)) {
@@ -392,11 +398,11 @@ export function eventText(ev) {
   if (ev.type === 'start') return `${n} begonnen${ev.dose ? ` (${ev.dose})` : ''}`;
   if (ev.type === 'restart') return `${n} wieder begonnen${ev.dose ? ` (${ev.dose})` : ''}`;
   if (ev.type === 'dose') return `${n}: ${ev.prevDose || '–'} → ${ev.dose || '–'}`;
-  return `${n} abgesetzt`;
+  return ev.med.kind === 'therapy' ? `${n} beendet` : `${n} abgesetzt`;
 }
 
 export function medLegend(el) {
-  const meds = store.getState().meds;
+  const meds = [...store.getState().meds].sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
   el.replaceChildren(
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),

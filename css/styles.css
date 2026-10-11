@@ -537,6 +537,7 @@ textarea:focus, .field input:focus { outline: none; border-color: var(--accent);
 .lane-dose { fill: var(--muted); font-size: 10.5px; font-family: var(--font-body); }
 .lane-none { fill: #6f6a82; font-size: 11px; font-family: var(--font-body); }
 .lane-track { stroke: var(--ink-3); stroke-width: 1; }
+.lane-group { fill: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; font-family: var(--font-body); }
 
 .chart-empty {
   display: grid; place-items: center;
@@ -612,6 +613,10 @@ textarea:focus, .field input:focus { outline: none; border-color: var(--accent);
 /* ---------------- medications ---------------- */
 
 .med-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.med-group { margin: 6px 0 -2px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.med-group:first-child { margin-top: 0; }
+.kind-tag { margin-left: 4px; padding: 1px 7px; border-radius: 99px; background: var(--ink-2); color: var(--text-2); font-size: 11px; font-weight: 600; }
+.kind-switch { align-self: flex-start; }
 .med-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
 .med-head { display: flex; align-items: center; gap: 10px; }
 .med-swatch { width: 14px; height: 14px; border-radius: 5px; flex: none; }
