@@ -1325,7 +1325,6 @@ function showEntryTab(tab) {
     $(`#tab-${name}`).classList.toggle('open', open);
     $(`#panel-${name}`).hidden = !open;
   }
-  if (tab === 'note') $('#entry-note').focus({ preventScroll: true });
 }
 let entryTab = null;
 for (const name of ['other', 'note']) {
