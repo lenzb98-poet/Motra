@@ -292,6 +292,35 @@ export function momentTitles(includeArchived = false) {
   return [...counts.values()].sort((a, b) => b.n - a.n || b.last.localeCompare(a.last));
 }
 
+// Activities = all entries that share a title. Archived when every one of them is archived.
+export function momentActivities() {
+  const map = new Map();
+  for (const m of state.moments) {
+    const key = m.title.toLowerCase();
+    const cur = map.get(key) ?? { title: m.title, n: 0, active: 0, last: '' };
+    cur.n++;
+    if (!m.archived) cur.active++;
+    if (m.date >= cur.last) { cur.last = m.date; cur.title = m.title; }
+    map.set(key, cur);
+  }
+  return [...map.values()].map(a => ({ title: a.title, n: a.n, last: a.last, archived: a.active === 0 }))
+    .sort((a, b) => Number(a.archived) - Number(b.archived) || b.n - a.n || b.last.localeCompare(a.last));
+}
+
+// Archive (or restore) a whole activity: every entry with this title.
+export function archiveActivity(title, on = true) {
+  const key = title.toLowerCase();
+  const stamp = now();
+  let any = false;
+  for (const m of state.moments) {
+    if (m.title.toLowerCase() !== key || !!m.archived === on) continue;
+    if (on) m.archived = true; else delete m.archived;
+    m.updatedAt = stamp;
+    any = true;
+  }
+  if (any) commit();
+}
+
 // Mood on days with this title vs. days without, within a range (days that have mood entries only).
 export function momentComparison(title, from, to) {
   const key = title.toLowerCase();

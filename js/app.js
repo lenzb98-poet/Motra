@@ -214,6 +214,29 @@ function renderTodayOther() {
     }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, on ? h('small', null, '✓') : null);
   }));
   $('#today-other-chips').hidden = !titles.length;
+  $('#today-other-manage').hidden = !moments.length;
+}
+
+/* Whole activities (all entries with one title): archive them out of the quick choices, or bring them back. */
+function activitiesSheet() {
+  const acts = store.momentActivities();
+  const colors = store.momentColors();
+  const row = a => h('div', { class: `activity${a.archived ? ' archived' : ''}` },
+    h('span', { class: 'key-dot', style: { background: momentCss(colors, a.title) } }),
+    h('span', { class: 'activity-name' }, a.title, h('small', null, `${a.n} ${a.n === 1 ? 'Eintrag' : 'Einträge'}`)),
+    h('button', {
+      type: 'button', class: 'btn small',
+      onclick: () => {
+        store.archiveActivity(a.title, !a.archived);
+        toast(a.archived ? `${a.title} aus dem Archiv geholt` : `${a.title} archiviert`);
+        activitiesSheet();
+      },
+    }, a.archived ? 'Wiederherstellen' : 'Archivieren'));
+  const active = acts.filter(a => !a.archived), done = acts.filter(a => a.archived);
+  openSheet('Aktivitäten',
+    h('p', { class: 'sheet-text' }, 'Archivierte Aktivitäten verschwinden aus der Schnellauswahl und den Listen. Ihre Einträge bleiben in Grafik und Auswertung erhalten.'),
+    active.length ? h('div', { class: 'activity-list' }, ...active.map(row)) : h('p', { class: 'empty-text' }, 'Alles ist archiviert.'),
+    done.length ? h('section', { class: 'sheet-section' }, h('h3', null, 'Archiviert'), h('div', { class: 'activity-list' }, ...done.map(row))) : null);
 }
 
 function toggleTodayOther(title) {
@@ -874,6 +897,7 @@ function renderOther() {
     onclick: () => { title.value = tt.title; otherSpan = !!lastOf(tt.title.toLowerCase())?.span; renderOther(); $('#other-note').focus(); },
   }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
   $('#other-quick').hidden = !titles.length;
+  $('#other-manage').hidden = !store.getState().moments.length;
 
   segmented($('#range-other'), prefs.rangeOther, id => { prefs.rangeOther = id; savePrefs(); renderOther(); });
   const { from, to } = rangeBounds(prefs.rangeOther);
@@ -1308,6 +1332,8 @@ for (const name of ['other', 'note']) {
   $(`#tab-${name}`).addEventListener('click', () => { entryTab = entryTab === name ? null : name; showEntryTab(entryTab); });
 }
 $('#today-other-add').addEventListener('click', addTodayOther);
+$('#today-other-manage').addEventListener('click', activitiesSheet);
+$('#other-manage').addEventListener('click', activitiesSheet);
 $('#today-other-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTodayOther(); } });
 $('#btn-more-other').addEventListener('click', () => { otherShown += 30; renderOtherList(); });
 $('#med-details').addEventListener('toggle', e => {
