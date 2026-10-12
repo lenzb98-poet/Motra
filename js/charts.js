@@ -187,16 +187,47 @@ export function moodChart(container, { from, to }) {
   const stats = store.rangeStats(from, to);
   if (!stats.count) return emptyState(container, 'Noch keine Einträge in diesem Zeitraum. Trag auf „Heute“ deine Stimmung ein, dann erscheint sie hier.');
 
-  const M = { top: 12, right: 14, bottom: total <= 10 ? 38 : 26, left: 30 };
+  // Layout: the curve on top, the shared timeline in the middle, below it a color band
+  // with one row per time of day (Morgen, Mittag, Abend), one column per day.
+  const M = { top: 12, right: 14, left: 30 };
   const plotH = 200;
-  const H = M.top + plotH + M.bottom;
+  const bandTop = M.top + plotH + (total <= 10 ? 44 : 30);
+  const boxes = total <= 31;                       // up to a month: separate boxes; longer: one continuous surface
+  const ROW = boxes ? 16 : 13, GAP = boxes ? 3 : 2;
+  const bandH = store.SLOTS.length * ROW + (store.SLOTS.length - 1) * GAP;
+  const H = bandTop + bandH + 6;
   const left = M.left, right = width - M.right, plotW = right - left;
   const x = scaleX(from, to, left, plotW);
   const y = scaleY(M.top, plotH);
   const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
 
   yAxis(svg, y, left, right);
-  xAxis(svg, dateTicks(from, to, x), M.top + plotH + 18);
+  // up to 10 days every day gets its label, so each column of boxes has its day
+  xAxis(svg, dateTicks(from, to, x, total <= 10 ? 28 : 54), M.top + plotH + 18);
+
+  // continuous rows get rounded ends via a clip path
+  const clipId = `band-clip-${Math.random().toString(36).slice(2, 8)}`;
+  if (!boxes) {
+    svg.append(s('defs', null, s('clipPath', { id: clipId }, ...store.SLOTS.map((sl, r) =>
+      s('rect', { x: left, y: bandTop + r * (ROW + GAP), width: plotW, height: ROW, rx: 4 })))));
+  }
+  const band = s('g', { class: 'mood-band', ...(boxes ? {} : { 'clip-path': `url(#${clipId})` }), ...(boxes || plotW / total < 1 ? {} : { 'shape-rendering': 'crispEdges' }) });
+  store.SLOTS.forEach((sl, r) => {
+    const ry = bandTop + r * (ROW + GAP);
+    if (!boxes) band.append(s('rect', { x: left, y: ry, width: plotW, height: ROW, rx: 3, class: 'band-row' }));
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      const e = store.dayEntries(d)[sl.id];
+      const x0 = x(d, 0), x1 = x(d, 1);
+      if (boxes) {
+        const inset = Math.min(1.5, (x1 - x0) * 0.12);   // a small gap between boxes
+        band.append(s('rect', { x: x0 + inset, y: ry, width: Math.max(1, x1 - x0 - 2 * inset), height: ROW, rx: 3,
+          class: e ? 'band-cell' : 'band-cell empty', ...(e ? { style: `fill:${store.moodColor(e.mood)}` } : {}) }));
+      } else if (e) {
+        band.append(s('rect', { x: x0, y: ry, width: Math.max(0.6, x1 - x0), height: ROW, style: `fill:${store.moodColor(e.mood)}` }));
+      }
+    }
+  });
+  svg.append(band);
 
   // single entries
   const dense = total > 120;
@@ -234,7 +265,7 @@ export function moodChart(container, { from, to }) {
   }
 
   attachHover(svg, {
-    from, to, left, width: plotW, top: M.top, bottom: M.top + plotH, x,
+    from, to, left, width: plotW, top: M.top, bottom: bandTop + bandH, x,
     label: `Stimmungsverlauf vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
     describe: date => {
       const entries = store.dayEntries(date);

@@ -4,7 +4,7 @@ import * as push from './push.js';
 import { moodChart, moodLegend, medChart, medLegend, eventText, momentsChart, momentsLegend } from './charts.js';
 import {
   h, s, icon, todayKey, addDays, diffDays, fromKey, formatLong, formatDayMonth, formatShort, formatWeekday,
-  formatMonth, relativeDay, num1, signed1,
+  relativeDay, num1, signed1,
 } from './util.js';
 
 const $ = sel => document.querySelector(sel);
@@ -570,10 +570,11 @@ function renderVerlauf() {
     stat('Einträge', String(st.count), possibleDays ? `von ${possibleDays * 3} möglichen` : 'bisher'),
   );
 
-  renderHeat(from, to, days, all);
-
-  // chart
+  // chart (with the color band per time of day below the timeline)
   moodLegend($('#mood-chart-legend'));
+  $('#mood-band-legend').replaceChildren(
+    ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
+    h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
   moodChart($('#mood-chart'), { from, to });
 
   // per slot
@@ -586,158 +587,6 @@ function renderVerlauf() {
   );
 
   renderEntryList();
-}
-
-/* ---------- "Auf einen Blick": the week grid, scaled to the chosen range ----------
-   Always time of day (Morgen, Mittag, Abend) stacked, one column per day.
-   7 and 30 days: separate boxes. 90 days, 1 year and "Alle": the boxes run into one continuous colored surface. */
-
-const heat = { date: null, slot: null };
-const mondayIndex = key => (fromKey(key).getDay() + 6) % 7;     // Mo = 0
-const HEAT_ROW = 24, HEAT_GAP = 3;                              // surface: row height and space between the three rows
-
-function renderHeat(from, to, days, all) {
-  const today = todayKey();
-  const el = $('#heat');
-  const dates = Array.from({ length: diffDays(from, to) + 1 }, (_, i) => addDays(from, i));
-  const surface = all || days > 31;
-  if (heat.date && (heat.date < from || heat.date > to)) heat.date = heat.slot = null;
-  const hasData = store.rangeStats(from, to).count > 0;
-
-  const rerender = () => renderHeat(from, to, days, all);
-  const select = (date, slot = null, toggle = true) => {
-    const same = heat.date === date && heat.slot === slot;
-    Object.assign(heat, same && toggle ? { date: null, slot: null } : { date, slot });
-    if (surface) { markHeat(dates); renderHeatCaption(); } else rerender();
-  };
-
-  if (!hasData) {
-    el.replaceChildren(h('p', { class: 'empty-text' }, 'In diesem Zeitraum gibt es noch keine Einträge.'));
-    $('#heat-meta').textContent = '';
-  } else if (!surface) {
-    // separate boxes
-    const week = dates.length <= 7;
-    const cells = [h('div')];
-    for (const d of dates) {
-      cells.push(week
-        ? h('div', { class: `heat-head${d === today ? ' today' : ''}` }, h('strong', null, formatWeekday(d)), fromKey(d).getDate() + '.')
-        : h('div', { class: `heat-head tick${d === today ? ' today' : ''}` }, mondayIndex(d) === 0 || (d === from && 7 - mondayIndex(d) >= 3) ? h('span', null, fromKey(d).getDate() + '.') : null));
-    }
-    for (const sl of store.SLOTS) {
-      cells.push(h('div', { class: 'heat-label' }, sl.label));
-      for (const d of dates) {
-        const e = store.dayEntries(d)[sl.id];
-        cells.push(h('button', {
-          type: 'button',
-          class: `heat-cell${e ? ' filled' : ''}${heat.date === d && heat.slot === sl.id ? ' selected' : ''}`,
-          style: e ? { background: store.moodColor(e.mood) } : null,
-          title: `${formatWeekday(d)} ${formatDayMonth(d)}, ${sl.label}: ${e ? num1(e.mood) : 'kein Eintrag'}`,
-          'aria-label': `${formatWeekday(d)} ${formatDayMonth(d)}, ${sl.label}: ${e ? store.describeMood(e.mood) : 'kein Eintrag'}`,
-          onclick: () => select(d, sl.id),
-        }));
-      }
-    }
-    if (week) {
-      cells.push(h('div', { class: 'heat-label' }, 'Ø'));
-      for (const d of dates) { const v = store.dayAverage(d); cells.push(h('div', { class: `week-avg${v == null ? ' empty' : ''}` }, v == null ? '–' : num1(v))); }
-    }
-    el.replaceChildren(h('div', { class: `heat-grid ${week ? 'week' : 'slots'}`, style: { '--cols': dates.length } }, ...cells));
-    $('#heat-meta').textContent = week ? 'Jedes Feld ist eine Tageszeit.' : 'Jede Spalte ist ein Tag. Tippe auf ein Feld.';
-  } else {
-    // one continuous surface: a column per day, the three times of day stacked
-    const N = dates.length;
-    const W = el.clientWidth || 300;
-    const H = store.SLOTS.length * HEAT_ROW + (store.SLOTS.length - 1) * HEAT_GAP;
-    const svg = s('svg', {
-      viewBox: `0 0 ${N} ${H}`, preserveAspectRatio: 'none', class: 'heat-surface-svg', height: H,
-      role: 'img', tabindex: '0',
-      'aria-label': `Stimmung von ${formatShort(from)} bis ${formatShort(to)}, nach Tageszeit. Pfeiltasten wählen einen Tag.`,
-      ...(N <= W ? { 'shape-rendering': 'crispEdges' } : {}),   // thinner than a pixel: let the browser blend neighbours
-    });
-    store.SLOTS.forEach((sl, r) => {
-      dates.forEach((d, i) => {
-        const e = store.dayEntries(d)[sl.id];
-        if (!e) return;
-        svg.append(s('rect', { x: i, y: r * (HEAT_ROW + HEAT_GAP), width: 1, height: HEAT_ROW, fill: store.moodColor(e.mood) }));
-      });
-    });
-    svg.append(s('rect', { class: 'heat-sel', x: 0, y: -1, width: 1, height: H + 2, visibility: 'hidden' }));
-
-    // month (or year) labels along the bottom
-    const labels = [];
-    const long = N > 430;
-    let lastPos = -1;
-    const addLabel = (i, text) => { const pos = i / N; if (pos - lastPos >= (long ? 0.09 : 0.12)) { labels.push(h('span', { style: { left: `${pos * 100}%` } }, text)); lastPos = pos; } };
-    dates.forEach((d, i) => {
-      const dt = fromKey(d);
-      if (long ? dt.getMonth() === 0 && dt.getDate() === 1 : dt.getDate() === 1) addLabel(i, long ? String(dt.getFullYear()) : formatMonth(d));
-    });
-    if (!labels.length || (labels[0] && parseFloat(labels[0].style.left) > 18)) {
-      // the range starts in the middle of a month/year: name where it starts
-      labels.unshift(h('span', { style: { left: '0%' } }, long ? String(fromKey(from).getFullYear()) : formatMonth(from)));
-    }
-
-    const rowLabels = h('div', { class: 'heat-rowlabels', style: { height: `${H}px` } }, ...store.SLOTS.map(sl => h('span', { style: { height: `${HEAT_ROW}px` } }, sl.label)));
-    const surfaceEl = h('div', { class: 'heat-surface' }, rowLabels, h('div', { class: 'heat-surface-main' }, svg, h('div', { class: 'heat-axis' }, ...labels)));
-    el.replaceChildren(surfaceEl);
-
-    // pick a day by tapping, dragging across, hovering or with the arrow keys
-    const indexAt = ev => {
-      const box = svg.getBoundingClientRect();
-      return Math.max(0, Math.min(N - 1, Math.floor(((ev.clientX - box.left) / box.width) * N)));
-    };
-    let pressed = false;
-    svg.addEventListener('pointerdown', ev => { pressed = true; const d = dates[indexAt(ev)]; select(d, null, ev.pointerType !== 'mouse' || heat.date === d); });
-    svg.addEventListener('pointermove', ev => {
-      if (!pressed && ev.pointerType !== 'mouse') return;
-      const d = dates[indexAt(ev)];
-      if (heat.date !== d || heat.slot) select(d, null, false);
-    });
-    for (const type of ['pointerup', 'pointercancel']) svg.addEventListener(type, () => { pressed = false; });
-    svg.addEventListener('keydown', ev => {
-      const step = { ArrowLeft: -1, ArrowRight: 1 }[ev.key];
-      if (!step) return;
-      ev.preventDefault();
-      const cur = heat.date ? dates.indexOf(heat.date) : N;
-      select(dates[Math.max(0, Math.min(N - 1, cur + step))], null, false);
-    });
-    $('#heat-meta').textContent = 'Jede Spalte ist ein Tag, oben Morgen, darunter Mittag und Abend. Tippe oder fahre mit dem Finger darüber.';
-    markHeat(dates);
-  }
-  renderHeatCaption();
-  $('#heat-legend').replaceChildren(
-    ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
-    h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
-}
-
-// Outline the chosen day on the surface.
-function markHeat(dates) {
-  const sel = document.querySelector('#heat .heat-sel');
-  if (!sel) return;
-  const i = heat.date ? dates.indexOf(heat.date) : -1;
-  sel.setAttribute('visibility', i < 0 ? 'hidden' : 'visible');
-  if (i >= 0) sel.setAttribute('x', String(i));
-  // keep the outline at least ~3px wide however many days are shown
-  const svg = sel.ownerSVGElement;
-  const w = Math.max(1, (dates.length / (svg.getBoundingClientRect().width || 300)) * 3);
-  sel.setAttribute('width', String(w));
-  if (i >= 0 && w > 1) sel.setAttribute('x', String(Math.min(i - (w - 1) / 2, dates.length - w)));
-}
-
-// Detail line for the chosen day (or time of day).
-function renderHeatCaption() {
-  const cap = $('#heat-caption');
-  if (!heat.date) { cap.replaceChildren(); cap.hidden = true; return; }
-  const d = heat.date;
-  const entries = store.dayEntries(d);
-  const avg = store.dayAverage(d);
-  const open = heat.slot ?? store.SLOTS.find(sl => entries[sl.id])?.id ?? store.currentSlot();
-  cap.hidden = false;
-  cap.replaceChildren(
-    h('strong', null, `${formatWeekday(d)}, ${formatDayMonth(d)}`),
-    ` · Ø ${avg == null ? '–' : num1(avg)} · `,
-    store.SLOTS.map(sl => `${sl.label} ${entries[sl.id] ? num1(entries[sl.id].mood) : '–'}`).join(' · '),
-    h('button', { type: 'button', class: 'link-btn', onclick: () => { selectEntry(d, open); location.hash = '#heute'; } }, 'Eintrag öffnen'));
 }
 
 function renderEntryList() {

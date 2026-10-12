@@ -10,7 +10,7 @@ Die Daten liegen zuerst im Browser auf deinem Gerät (`localStorage`). Optional 
 - **Feinregler:** Gesicht gedrückt halten und zur Seite ziehen: Unter den Gesichtern erscheint ein Regler für Zwischenwerte wie 3,6. Einfaches Tippen wählt weiter ganze Werte.
 - **Deine Woche:** Die letzten 7 Tage als Raster (Tageszeit × Tag). Ein Tipp auf ein Feld öffnet diesen Eintrag.
 - **Verlauf:** Durchschnitt, Veränderung zum Zeitraum davor, Grafik mit Einzelwerten, Tagesdurchschnitt und 7-Tage-Schnitt sowie Auswertung nach Tageszeit. Zeiträume: 7 Tage, 30 Tage, 90 Tage, 1 Jahr oder alles.
-- **Auf einen Blick:** Unter der Verlaufsgrafik zeigt ein Farbraster für jeden Zeitraum Morgen, Mittag und Abend übereinander, eine Spalte pro Tag. Bei 7 und 30 Tagen sind es einzelne Felder, bei 90 Tagen, 1 Jahr und „Alle“ gehen sie zu einer durchgehenden Farbfläche ineinander über. Ein Tipp (oder Darüberfahren mit dem Finger) zeigt die Werte des Tages und führt auf Wunsch zum Eintrag.
+- **Farbstreifen im Verlauf:** Unter der Zeitleiste der Verlaufsgrafik zeigt ein Farbstreifen jeden Tag mit Morgen, Mittag und Abend übereinander. Grafik und Streifen teilen sich dieselbe Zeitachse. Bis 30 Tage sind es einzelne Felder, darüber eine durchgehende Farbfläche.
 - **Medikamente & Therapien:** Medikamente mit Dosis oder Therapien mit Häufigkeit/Art erfassen (Therapien auch im Voraus: geplanter Beginn, geplante Änderung oder geplantes Ende), ändern, absetzen bzw. beenden oder wieder aufnehmen. Oben wählst du, ob du alles, nur Medikamente oder nur Therapien sehen willst; die Liste lässt sich zuklappen. Darunter siehst du:
   - Stimmung und Einnahme-Zeiträume übereinander auf einer gemeinsamen Zeitachse
   - die Ø Stimmung an Tagen mit und ohne Einnahme

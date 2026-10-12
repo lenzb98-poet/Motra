@@ -1009,42 +1009,8 @@ a.btn { text-decoration: none; }
 .activity-name { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
 .activity-name small { color: var(--muted); font-weight: 500; font-size: 12px; }
 
-/* "Auf einen Blick" (Verlauf) */
-.heat-grid { display: grid; gap: 4px; align-items: center; }
-.heat-grid.week, .heat-grid.slots { grid-template-columns: 54px repeat(var(--cols), minmax(0, 1fr)); }
-.heat-grid.slots { gap: 3px; }
-.heat-head { text-align: center; font-size: 11.5px; line-height: 1.25; color: var(--muted); font-variant-numeric: tabular-nums; }
-.heat-head strong { display: block; font-weight: 600; color: var(--text-2); font-size: 12px; }
-.heat-head.today, .heat-head.today strong { color: var(--accent); }
-.heat-head.tick { height: 14px; position: relative; }
-.heat-head.tick span { position: absolute; left: 0; bottom: 0; white-space: nowrap; font-size: 10.5px; }
-.heat-label { font-size: 12px; color: var(--muted); font-weight: 600; }
-.heat-label.small { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.heat-cell {
-  height: 30px; min-width: 0; padding: 0;
-  border: 0; border-radius: 8px; background: transparent;
-  box-shadow: inset 0 0 0 1px var(--ink-3);
-}
-.heat-cell.blank { box-shadow: none; pointer-events: none; }
-.heat-cell.filled { box-shadow: none; }
-.heat-cell:not(.blank):hover { box-shadow: inset 0 0 0 1px var(--ink-4); }
-.heat-cell.filled:hover { box-shadow: 0 0 0 1px var(--text-2); }
-.heat-cell.selected { outline: 2px solid var(--text); outline-offset: 1px; }
-.heat-cell.today:not(.selected) { outline: 1px solid var(--accent); outline-offset: 1px; }
-.heat-grid.slots .heat-cell { height: 30px; border-radius: 3px; }
-.heat-grid.slots .heat-cell { height: 30px; border-radius: 3px; }
-/* the continuous surface (90 days, 1 year, all) */
-.heat-surface { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 0 8px; }
-.heat-rowlabels { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
-.heat-rowlabels span { display: flex; align-items: center; }
-.heat-surface-main { min-width: 0; }
-.heat-surface-svg { display: block; width: 100%; border-radius: 6px; background: var(--ink-0); touch-action: pan-y; cursor: crosshair; }
-.heat-surface-svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.heat-sel { fill: none; stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
-.heat-axis { position: relative; height: 18px; margin-top: 6px; font-size: 10.5px; color: var(--muted); }
-.heat-axis span { position: absolute; top: 0; white-space: nowrap; }
-.heat-caption { margin: 14px 0 0; font-size: 13px; line-height: 1.6; color: var(--text-2); }
-.heat-caption strong { color: var(--text); }
-.heat-caption .link-btn { margin-left: 8px; }
-.heat-caption[hidden] { display: none; }
+/* color band under the timeline of the mood chart */
+.band-row { fill: var(--ink-0); }
+.band-cell.empty { fill: transparent; stroke: var(--ink-3); stroke-width: 1; }
+.chart-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 .mood-scale-legend i.none { box-shadow: inset 0 0 0 1px var(--ink-4); }
