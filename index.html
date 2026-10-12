@@ -80,12 +80,17 @@
           </div>
           <div id="panel-other" role="region" aria-labelledby="tab-other" class="entry-panel today-other" hidden>
             <p class="card-meta" id="today-other-hint"></p>
+            <h3 class="entry-sub" id="today-other-days-label" hidden>Einzelne Einträge</h3>
             <div class="other-quick" id="today-other-chips"></div>
             <button type="button" class="link-btn" id="today-other-manage" hidden>Aktivitäten verwalten</button>
-            <p class="card-meta" id="today-other-running" hidden></p>
             <div class="today-other-add">
               <input type="text" id="today-other-input" maxlength="80" placeholder="Neu, z. B. Spaziergang" aria-label="Neuer Eintrag" autocomplete="off">
               <button type="button" class="btn" id="today-other-add">Hinzufügen</button>
+            </div>
+            <!-- running periods, kept apart from the single entries; a tap + confirmation ends one -->
+            <div id="today-other-periods" hidden>
+              <h3 class="entry-sub">Laufende Zeiträume</h3>
+              <div class="period-list" id="today-other-period-list"></div>
             </div>
           </div>
 

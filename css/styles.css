@@ -1014,3 +1014,20 @@ a.btn { text-decoration: none; }
 .band-cell.empty { fill: transparent; stroke: var(--ink-3); stroke-width: 1; }
 .chart-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 .mood-scale-legend i.none { box-shadow: inset 0 0 0 1px var(--ink-4); }
+
+/* Heute → Einträge: sub headings and the running periods */
+.entry-sub { margin: 4px 0 -2px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.period-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.period-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 48px; padding: 8px 12px;
+  border: 1px solid var(--ink-3); border-radius: var(--radius);
+  background: var(--ink-0); text-align: left;
+}
+.period-row:hover { border-color: var(--ink-4); }
+.period-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.period-title { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.period-main small { color: var(--muted); font-size: 12px; }
+.period-hint { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); }
+.period-row.armed { border-color: var(--bad); background: rgba(229, 99, 107, 0.08); }
+.period-row.armed .period-hint { color: var(--text); }

@@ -190,9 +190,13 @@ function renderTodayOther() {
   badge.hidden = !count;
   badge.textContent = String(count);
   $('#today-other-hint').textContent = `Was hast du ${day === 'heute' ? 'heute ' : day === 'gestern' ? 'gestern ' : `${day} `}gemacht oder erlebt? Tippe an, noch mal tippen nimmt es weg.`;
-  const run = $('#today-other-running');
-  run.hidden = !running.length;
-  run.textContent = running.length ? `Läuft in dieser Zeit: ${running.map(m => m.title).join(', ')}` : '';
+
+  // Running periods, kept apart from the single entries. Tapping one asks for confirmation, then ends it today.
+  const periods = moments.filter(m => m.span && !m.archived && store.momentRunning(m) && (m.end == null || m.end > todayKey()))   // ended today = done
+    .sort((a, b) => a.date.localeCompare(b.date));
+  $('#today-other-periods').hidden = !periods.length;
+  $('#today-other-days-label').hidden = !periods.length;
+  $('#today-other-period-list').replaceChildren(...periods.map(m => endablePeriod(m, colors)));
 
   // Titles that were used for single days before, most frequent first.
   const counts = new Map();
@@ -237,6 +241,29 @@ function activitiesSheet() {
     h('p', { class: 'sheet-text' }, 'Archivierte Aktivitäten verschwinden aus der Schnellauswahl und den Listen. Ihre Einträge bleiben in Grafik und Auswertung erhalten.'),
     active.length ? h('div', { class: 'activity-list' }, ...active.map(row)) : h('p', { class: 'empty-text' }, 'Alles ist archiviert.'),
     done.length ? h('section', { class: 'sheet-section' }, h('h3', null, 'Archiviert'), h('div', { class: 'activity-list' }, ...done.map(row))) : null);
+}
+
+// A running period as a row. First tap arms it ("Heute beenden? Nochmal tippen"), the second ends it.
+function endablePeriod(m, colors) {
+  const hint = h('span', { class: 'period-hint' }, 'Beenden');
+  const row = h('button', { type: 'button', class: 'period-row', 'aria-label': `${m.title}, seit ${formatShort(m.date)}. Tippen zum Beenden.` },
+    h('span', { class: 'key-bar', style: { background: momentCss(colors, m.title) } }),
+    h('span', { class: 'period-main' }, h('span', { class: 'period-title' }, m.title),
+      h('small', null, m.end ? `${formatShort(m.date)} – ${formatShort(m.end)}` : `seit ${formatShort(m.date)}`)),
+    hint);
+  let timer;
+  row.addEventListener('click', () => {
+    if (row.classList.contains('armed')) {
+      clearTimeout(timer);
+      store.endMoment(m.id, todayKey());
+      toast(`${m.title} beendet`);
+      return;
+    }
+    row.classList.add('armed');
+    hint.textContent = 'Heute beenden? Nochmal tippen';
+    timer = setTimeout(() => { row.classList.remove('armed'); hint.textContent = 'Beenden'; }, 4000);
+  });
+  return row;
 }
 
 function toggleTodayOther(title) {
