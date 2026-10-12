@@ -1028,6 +1028,7 @@ a.btn { text-decoration: none; }
 .period-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .period-title { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
 .period-main small { color: var(--muted); font-size: 12px; }
-.period-hint { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); }
-.period-row.armed { border-color: var(--bad); background: rgba(229, 99, 107, 0.08); }
-.period-row.armed .period-hint { color: var(--text); }
+.period-note { margin-top: 2px; font-size: 13px; line-height: 1.4; color: var(--text-2); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.period-row::after { content: ''; flex: none; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-top: 2px solid var(--muted); transform: rotate(45deg); margin-right: 2px; }
+.period-status { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text); }
+.period-note-full { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }

@@ -243,27 +243,44 @@ function activitiesSheet() {
     done.length ? h('section', { class: 'sheet-section' }, h('h3', null, 'Archiviert'), h('div', { class: 'activity-list' }, ...done.map(row))) : null);
 }
 
-// A running period as a row. First tap arms it ("Heute beenden? Nochmal tippen"), the second ends it.
+// A running period as a row (with its note); tapping it opens its details.
 function endablePeriod(m, colors) {
-  const hint = h('span', { class: 'period-hint' }, 'Beenden');
-  const row = h('button', { type: 'button', class: 'period-row', 'aria-label': `${m.title}, seit ${formatShort(m.date)}. Tippen zum Beenden.` },
+  return h('button', { type: 'button', class: 'period-row', 'aria-label': `${m.title}, seit ${formatShort(m.date)}. Tippen für Details.`, onclick: () => periodSheet(m.id) },
     h('span', { class: 'key-bar', style: { background: momentCss(colors, m.title) } }),
-    h('span', { class: 'period-main' }, h('span', { class: 'period-title' }, m.title),
-      h('small', null, m.end ? `${formatShort(m.date)} – ${formatShort(m.end)}` : `seit ${formatShort(m.date)}`)),
-    hint);
-  let timer;
-  row.addEventListener('click', () => {
-    if (row.classList.contains('armed')) {
-      clearTimeout(timer);
-      store.endMoment(m.id, todayKey());
-      toast(`${m.title} beendet`);
-      return;
-    }
-    row.classList.add('armed');
-    hint.textContent = 'Heute beenden? Nochmal tippen';
-    timer = setTimeout(() => { row.classList.remove('armed'); hint.textContent = 'Beenden'; }, 4000);
-  });
-  return row;
+    h('span', { class: 'period-main' },
+      h('span', { class: 'period-title' }, m.title),
+      h('small', null, m.end ? `${formatShort(m.date)} – ${formatShort(m.end)}` : `seit ${formatShort(m.date)}`),
+      m.note ? h('span', { class: 'period-note' }, m.note) : null));
+}
+
+// Details of a period: dates, length, mood, note. From here it can be edited or ended (with confirmation).
+function periodSheet(id) {
+  const m = store.getState().moments.find(x => x.id === id);
+  if (!m) return;
+  const today = todayKey();
+  const colors = store.momentColors();
+  const e = store.spanEffect(m);
+  const ongoing = m.end == null || m.end > today;
+  const status = m.date > today ? `Beginnt am ${formatLong(m.date)}` : m.end == null ? 'Läuft noch' : m.end > today ? `Läuft noch, geplant bis ${formatShort(m.end)}` : 'Beendet';
+  const rows = [
+    ['Beginn', formatLong(m.date)],
+    ['Ende', m.end == null ? 'offen' : formatLong(m.end)],
+    ['Dauer', e.started ? `${e.days} ${e.days === 1 ? 'Tag' : 'Tage'}${ongoing ? ' bisher' : ''}` : '–'],
+    ['Ø Stimmung', e.during.avg != null ? `${num1(e.during.avg)} · ${e.during.days} ${e.during.days === 1 ? 'Tag' : 'Tage'} mit Eintrag` : 'noch keine Einträge'],
+    ['Davor (4 Wochen)', e.before.avg != null ? `Ø ${num1(e.before.avg)}${e.during.avg != null ? ` · ${signed1(e.during.avg - e.before.avg)} währenddessen` : ''}` : '–'],
+    ...(e.ended && e.after.avg != null ? [['Danach (4 Wochen)', `Ø ${num1(e.after.avg)}`]] : []),
+  ];
+  openSheet(m.title,
+    h('p', { class: 'sheet-text period-status' }, h('span', { class: 'key-bar', style: { background: momentCss(colors, m.title) } }), status),
+    h('dl', { class: 'info-list' }, ...rows.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
+    m.note ? h('section', { class: 'sheet-section' }, h('h3', null, 'Notiz'), h('p', { class: 'sheet-text period-note-full' }, m.note)) : null,
+    h('div', { class: 'sheet-actions' },
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => editMomentSheet(m) }, 'Bearbeiten'),
+      ongoing ? armedButton('Heute beenden', 'Wirklich beenden? Nochmal tippen', () => {
+        store.endMoment(m.id, today);
+        closeSheet();
+        toast(`${m.title} beendet`);
+      }, 'btn danger') : null));
 }
 
 function toggleTodayOther(title) {
