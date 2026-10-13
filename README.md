@@ -15,7 +15,7 @@ Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf**
   - „Deine Woche“: die letzten 7 Tage als Farbraster.
 - **Verlauf**
   - Eine Ansicht (7 T, 30 T, 90 T, 1 J, Alle) für alles. Kennzahlen: Durchschnitt, Veränderung, Anzahl Einträge.
-  - Eine Grafik: Stimmungskurve, darunter die Zeitleiste und ein Farbstreifen für Morgen, Mittag und Abend. Medikamente und Aktivitäten lassen sich als beschriftete Zeilen einblenden. Krankheitstage liegen rot gestreift im Hintergrund.
+  - Eine Grafik: Stimmungskurve, darunter die Zeitleiste und ein Farbstreifen für Morgen, Mittag und Abend. Medikamente und Aktivitäten lassen sich als beschriftete Zeilen einblenden; sie stehen direkt unter der Zeitleiste, senkrechte Linien markieren Beginn, Änderung und Ende, der Farbstreifen rückt dann ans Ende. Krankheitstage liegen rot gestreift im Hintergrund.
   - „Was auffällt“: Medikamente und Aktivitäten mit dem größten Unterschied der Stimmung an Tagen mit und ohne.
   - Durchschnitt nach Tageszeit und alle Stimmungen als Liste.
 - **Therapien**

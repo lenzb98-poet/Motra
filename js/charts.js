@@ -243,23 +243,27 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
   // layout
   const M = { top: 12, right: 14, left: 30 };
   const plotH = 190;
+  // Order below the plot: date axis, then the lanes (so their start/end lines run straight up
+  // into the plot), then the color band at the very bottom.
   const plotBottom = M.top + plotH;
-  const bandTop = plotBottom + (total <= 10 ? 44 : 30);
+  const axisSpace = total <= 10 ? 44 : 30;
   const boxes = total <= 31;
   const ROW = boxes ? 15 : 12, GAP = boxes ? 3 : 2;
   const bandH = store.SLOTS.length * ROW + (store.SLOTS.length - 1) * GAP;
   const LANE = 30, GROUP = 26;
   const laneRows = [];
-  let yy = bandTop + bandH + 10;
+  const laneY = new Map();            // med id / activity key → y of its lane
+  let yy = plotBottom + axisSpace - GROUP + 18;   // first group label sits clear of the date labels
   const addGroup = (label, lanes, kind) => {
     if (!lanes.length) return;
     yy += GROUP;
     laneRows.push({ label, y: yy - 9 });
-    for (const l of lanes) { laneRows.push({ kind, lane: l, y: yy }); yy += LANE; }
+    for (const l of lanes) { laneRows.push({ kind, lane: l, y: yy }); laneY.set(kind === 'med' ? l.id : l.key, yy); yy += LANE; }
   };
   addGroup('MEDIKAMENTE & THERAPIEN', medLanes, 'med');
   addGroup('AKTIVITÄTEN', actLanes, 'act');
-  const H = yy + 6;
+  const bandTop = laneRows.length ? yy + 12 : plotBottom + axisSpace;
+  const H = bandTop + bandH + 6;
 
   const left = M.left, right = width - M.right, plotW = right - left;
   const x = scaleX(from, to, left, plotW);
@@ -270,24 +274,29 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
   const sickFill = sickLayer(svg, { from, to, x, top: M.top, height: plotH });
   xAxis(svg, dateTicks(from, to, x, total <= 10 ? 28 : 54), plotBottom + 18);
 
-  // markers in the plot: medication changes, single-day activities, faint bands for periods
+  // vertical lines from the top of the plot down to the own lane: each start, change and end of a
+  // medication, each single-day activity, start and end of a period (plus a faint band behind it)
   const marks = s('g', { class: 'markers' });
   for (const m of medLanes) {
+    const ly = laneY.get(m.id) + 14;
     for (const ev of store.medEvents(m)) {
       if (ev.date < from || ev.date > to) continue;
       const px = x(ev.date, 0);
-      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: plotBottom, class: 'marker', style: `stroke:var(--c${m.color + 1})` }));
+      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: ly, class: 'marker', style: `stroke:var(--c${m.color + 1})` }));
     }
   }
-  const fade = momentList.length > 40 ? .18 : .4;
+  const fade = momentList.length > 40 ? .2 : .45;
   for (const m of momentList) {
+    const ly = laneY.get(m.title.toLowerCase()) + 19;
+    const line = px => marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: ly, class: 'marker', style: `stroke:${colorOf(m)};opacity:${fade}` }));
     if (m.span) {
       const last = store.momentLast(m);
       const a = x(m.date < from ? from : m.date, 0), b = x(last > to ? to : last, 1);
       marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
+      if (m.date >= from) line(a);
+      if (m.end != null && m.end <= to) line(b);
     } else {
-      const px = x(m.date, 0.5);
-      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: plotBottom, class: 'marker', style: `stroke:${colorOf(m)};opacity:${fade}` }));
+      line(x(m.date, 0.5));
     }
   }
   svg.append(marks);
