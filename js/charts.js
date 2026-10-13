@@ -137,6 +137,8 @@ function attachHover(svg, { from, to, left, width, top, bottom, x, describe, lab
   hit.addEventListener('pointermove', e => show(dateAt(e.clientX), e.clientX, e.clientY));
   hit.addEventListener('pointerdown', e => show(dateAt(e.clientX), e.clientX, e.clientY));
   hit.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hide(); });
+  // Touch: the info shows while the finger is on the chart and goes away when it is lifted.
+  for (const type of ['pointerup', 'pointercancel']) hit.addEventListener(type, e => { if (e.pointerType !== 'mouse') hide(); });
   hit.addEventListener('blur', hide);
   hit.addEventListener('keydown', e => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(e.key)) return;

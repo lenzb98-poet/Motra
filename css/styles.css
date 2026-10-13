@@ -528,7 +528,7 @@ textarea:focus, .field input:focus, .day-add input:focus { outline: none; border
 .entry-dot { stroke: var(--ink-1); stroke-width: 1.2; opacity: .9; }
 .avg-dot { fill: var(--text-2); opacity: .55; }
 .crosshair { stroke: var(--text-2); stroke-width: 1; opacity: .55; pointer-events: none; }
-.hit { fill: transparent; cursor: crosshair; outline: none; }
+.hit { fill: transparent; cursor: crosshair; outline: none; touch-action: pan-y; }
 .hit:focus-visible { stroke: var(--accent); stroke-width: 1.5; }
 .marker { stroke-width: 1; opacity: .45; }
 .lane-name { fill: var(--text); font-size: 12px; font-weight: 600; font-family: var(--font-body); }
