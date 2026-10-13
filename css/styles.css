@@ -1032,3 +1032,21 @@ a.btn { text-decoration: none; }
 .period-row::after { content: ''; flex: none; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-top: 2px solid var(--muted); transform: rotate(45deg); margin-right: 2px; }
 .period-status { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text); }
 .period-note-full { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+
+/* illness: red stripes */
+.sick-tint { fill: var(--bad); opacity: .05; }
+.sick-stripe { fill: var(--bad); opacity: .2; }
+.sick-bar-bg { fill: var(--bad); opacity: .35; }
+.sick-bar-stripe { fill: var(--bad); }
+.key-sick, .key-bar.key-sick, .key-dot.key-sick {
+  display: inline-block; flex: none; width: 14px; height: 10px; border-radius: 3px;
+  background: repeating-linear-gradient(45deg, rgba(229, 99, 107, .9) 0 2px, rgba(229, 99, 107, .2) 2px 5px);
+}
+.key-bar.key-sick { height: 7px; }
+.med-swatch.key-sick { width: 18px; height: 8px; border-radius: 4px; }
+.tip-sick { display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: #ff9aa0; }
+.week-col-head.sick { position: relative; }
+.week-col-head.sick::after {
+  content: ''; position: absolute; left: 10%; right: 10%; bottom: -3px; height: 4px; border-radius: 2px;
+  background: repeating-linear-gradient(45deg, rgba(229, 99, 107, .9) 0 2px, rgba(229, 99, 107, .2) 2px 5px);
+}

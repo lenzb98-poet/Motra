@@ -246,7 +246,7 @@ function activitiesSheet() {
 // A running period as a row (with its note); tapping it opens its details.
 function endablePeriod(m, colors) {
   return h('button', { type: 'button', class: 'period-row', 'aria-label': `${m.title}, seit ${formatShort(m.date)}. Tippen für Details.`, onclick: () => periodSheet(m.id) },
-    h('span', { class: 'key-bar', style: { background: momentCss(colors, m.title) } }),
+    momentMark(colors, m, 'key-bar'),
     h('span', { class: 'period-main' },
       h('span', { class: 'period-title' }, m.title),
       h('small', null, m.end ? `${formatShort(m.date)} – ${formatShort(m.end)}` : `seit ${formatShort(m.date)}`),
@@ -271,7 +271,7 @@ function periodSheet(id) {
     ...(e.ended && e.after.avg != null ? [['Danach (4 Wochen)', `Ø ${num1(e.after.avg)}`]] : []),
   ];
   openSheet(m.title,
-    h('p', { class: 'sheet-text period-status' }, h('span', { class: 'key-bar', style: { background: momentCss(colors, m.title) } }), status),
+    h('p', { class: 'sheet-text period-status' }, momentMark(colors, m, 'key-bar'), m.sick ? `Krank · ${status}` : status),
     h('dl', { class: 'info-list' }, ...rows.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
     m.note ? h('section', { class: 'sheet-section' }, h('h3', null, 'Notiz'), h('p', { class: 'sheet-text period-note-full' }, m.note)) : null,
     h('div', { class: 'sheet-actions' },
@@ -351,7 +351,8 @@ function renderWeek() {
   const days = Array.from({ length: 7 }, (_, i) => addDays(today, i - 6));
   const grid = [h('div')];
   for (const d of days) {
-    grid.push(h('div', { class: `week-col-head${d === today ? ' today' : ''}` }, h('strong', null, formatWeekday(d)), new Date(d + 'T12:00').getDate() + '.'));
+    const sick = store.sickOn(d);
+    grid.push(h('div', { class: `week-col-head${d === today ? ' today' : ''}${sick ? ' sick' : ''}`, title: sick ? `Krank · ${sick.title}` : null }, h('strong', null, formatWeekday(d)), new Date(d + 'T12:00').getDate() + '.'));
   }
   for (const sl of store.SLOTS) {
     grid.push(h('div', { class: 'week-row-label' }, sl.label));
@@ -615,7 +616,7 @@ function renderVerlauf() {
   );
 
   // chart (with the color band per time of day below the timeline)
-  moodLegend($('#mood-chart-legend'));
+  moodLegend($('#mood-chart-legend'), { from, to });
   $('#mood-band-legend').replaceChildren(
     ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
     h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
@@ -824,7 +825,7 @@ function renderMedis() {
 
   segmented($('#range-medis'), prefs.rangeMedis, id => { prefs.rangeMedis = id; savePrefs(); renderMedis(); });
   const { from, to } = rangeBounds(prefs.rangeMedis);
-  medLegend($('#med-chart-legend'), filter.id);
+  medLegend($('#med-chart-legend'), filter.id, { from, to });
   medChart($('#med-chart'), { from, to, show: filter.id });
   renderCompare(from, to);
   renderEvents();
@@ -888,8 +889,10 @@ function renderEvents() {
 /* ================= ANDERES ================= */
 
 let otherShown = 20;
-let otherSpan = false;   // form mode: one day or a period
-const MOMENT_MODES = [{ id: false, label: 'Ein Tag' }, { id: true, label: 'Zeitraum' }];
+let otherSpan = false;   // form mode: false = one day, true = a period, 'sick' = a period of illness
+const MOMENT_MODES = [{ id: false, label: 'Ein Tag' }, { id: true, label: 'Zeitraum' }, { id: 'sick', label: 'Krank' }];
+// Fill in a name for an illness if none was typed.
+const withSickTitle = (title, mode) => (mode === 'sick' && !title.trim() ? 'Krank' : title);
 const momentEndMax = () => addDays(todayKey(), 365);   // a period may have a planned end (holiday until Friday)
 
 // Validation shared by the form and the edit sheet. Returns an error text or ''.
@@ -921,6 +924,8 @@ function applyOtherMode() {
   momentModeSwitch($('#other-mode'), otherSpan, span => { otherSpan = span; applyOtherMode(); });
   $('#other-date-label').textContent = otherSpan ? 'Von' : 'Tag';
   $('#other-end-field').hidden = !otherSpan;
+  $('#other-title').placeholder = otherSpan === 'sick' ? 'z. B. Grippe, Erkältung (leer = „Krank“)' : 'z. B. Morgenroutine, Spaziergang, gutes Gespräch';
+  $('#other-title').required = otherSpan !== 'sick';
   const end = $('#other-end');
   end.min = $('#other-date').value || '';
   end.max = momentEndMax();
@@ -941,7 +946,7 @@ function renderOther() {
   const lastOf = key => [...store.getState().moments].reverse().find(m => m.title.toLowerCase() === key);
   $('#other-quick').replaceChildren(...titles.slice(0, 8).map(tt => h('button', {
     type: 'button', class: `quick-chip${title.value.trim().toLowerCase() === tt.title.toLowerCase() ? ' on' : ''}`,
-    onclick: () => { title.value = tt.title; otherSpan = !!lastOf(tt.title.toLowerCase())?.span; renderOther(); $('#other-note').focus(); },
+    onclick: () => { title.value = tt.title; const last = lastOf(tt.title.toLowerCase()); otherSpan = last?.sick ? 'sick' : !!last?.span; renderOther(); $('#other-note').focus(); },
   }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
   $('#other-quick').hidden = !titles.length;
   $('#other-manage').hidden = !store.getState().moments.length;
@@ -955,6 +960,10 @@ function renderOther() {
 }
 
 const momentCss = (colors, title) => `var(--c${(colors.get(title.toLowerCase()) ?? 0) + 1})`;
+// Color mark for an entry: illness gets the red stripes, everything else its own color.
+const momentMark = (colors, m, cls = m.span ? 'key-bar' : 'key-dot') => (m.sick
+  ? h('span', { class: `${cls} key-sick` })
+  : h('span', { class: cls, style: { background: momentCss(colors, m.title) } }));
 
 const hbarRow = (label, data, cls, color) => h('div', { class: 'hbar' },
   h('span', { class: 'hbar-label' }, label),
@@ -991,7 +1000,7 @@ function renderOtherEffect(from, to, titles) {
     else if (e.during.days < 3) hint = 'Noch zu wenige Tage mit Stimmungseintrag in diesem Zeitraum.';
     else hint = h('span', null, e.ended ? 'Währenddessen ' : 'Bisher ', deltaEl(e.during.avg - e.before.avg), ' im Vergleich zu den 4 Wochen davor.');
     blocks.push(h('div', { class: 'compare-block' },
-      h('h3', null, h('span', { class: 'med-swatch moment span', style: { background: momentCss(colors, m.title) } }), m.title, h('span', { class: 'kind-tag' }, momentDateLabel(m))),
+      h('h3', null, m.sick ? h('span', { class: 'med-swatch moment span key-sick' }) : h('span', { class: 'med-swatch moment span', style: { background: momentCss(colors, m.title) } }), m.title, h('span', { class: 'kind-tag' }, momentDateLabel(m))),
       h('div', { class: 'compare-rows' }, ...rows),
       h('p', { class: 'compare-hint' }, hint)));
   }
@@ -1031,7 +1040,7 @@ function renderOtherList() {
     return h('button', { type: 'button', class: `other-row${m.span ? ' span' : ''}`, onclick: () => editMomentSheet(m) },
       h('span', { class: 'other-date' }, momentDateLabel(m)),
       h('span', { class: 'other-main' },
-        h('span', { class: 'other-title' }, h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: momentCss(colors, m.title) } }), m.title, !m.archived && store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
+        h('span', { class: 'other-title' }, momentMark(colors, m), m.title, !m.archived && store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
         m.note ? h('span', { class: 'other-note' }, m.note) : null),
       mood != null ? h('span', { class: 'other-mood', title: m.span ? 'Ø Stimmung in diesem Zeitraum' : 'Ø Stimmung an diesem Tag', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
   };
@@ -1044,7 +1053,7 @@ function renderOtherList() {
   $('#other-archive').replaceChildren(...(archive ? [archive] : []));
 }
 
-function editMomentSheet(m, span = !!m.span) {
+function editMomentSheet(m, span = m.sick ? 'sick' : !!m.span) {
   const title = h('input', { id: 'edit-other-title', type: 'text', value: m.title, maxlength: 80, required: true, autocomplete: 'off' });
   const date = h('input', { id: 'edit-other-date', type: 'date', value: m.date, max: todayKey(), required: true });
   const end = h('input', { id: 'edit-other-end', type: 'date', value: m.span ? m.end ?? '' : '', min: m.date, max: momentEndMax() });
@@ -1053,11 +1062,12 @@ function editMomentSheet(m, span = !!m.span) {
   const err = h('p', { class: 'form-error', hidden: true });
   // Switching keeps what was typed.
   const modeSwitch = h('div', { class: 'segmented kind-switch', role: 'radiogroup', 'aria-label': 'Dauer' });
-  momentModeSwitch(modeSwitch, span, next => editMomentSheet({ ...m, title: title.value, date: date.value, note: note.value, span: next, end: end.value || null }, next));
+  momentModeSwitch(modeSwitch, span, next => editMomentSheet({ ...m, title: title.value, date: date.value, note: note.value, span: !!next, sick: next === 'sick', end: end.value || null }, next));
+  if (span === 'sick') { title.required = false; title.placeholder = 'z. B. Grippe (leer = „Krank“)'; }
   const running = span && m.id && store.momentRunning(store.getState().moments.find(x => x.id === m.id) ?? {});
   openSheet('Eintrag bearbeiten', h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
-    const values = { title: title.value, date: date.value, note: note.value, span, end: span ? end.value || null : null };
+    const values = { title: withSickTitle(title.value, span), date: date.value, note: note.value, span: !!span, sick: span === 'sick', end: span ? end.value || null : null };
     const msg = momentError(values);
     if (msg) { err.textContent = msg; err.hidden = false; return; }
     store.updateMoment(m.id, values);
@@ -1352,7 +1362,7 @@ $('#other-form').addEventListener('submit', e => {
   e.preventDefault();
   const title = $('#other-title'), date = $('#other-date'), end = $('#other-end'), note = $('#other-note'), err = $('#other-error');
   err.hidden = true;
-  const entry = { date: date.value, title: title.value, note: note.value, span: otherSpan, end: otherSpan ? end.value || null : null };
+  const entry = { date: date.value, title: withSickTitle(title.value, otherSpan), note: note.value, span: !!otherSpan, sick: otherSpan === 'sick', end: otherSpan ? end.value || null : null };
   const msg = momentError(entry);
   if (msg) { err.textContent = msg; err.hidden = false; return; }
   title.value = ''; note.value = ''; end.value = '';

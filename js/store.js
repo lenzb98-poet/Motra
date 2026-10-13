@@ -168,6 +168,7 @@ function normalizeMoments(list) {
     out.push({
       id, date: m.date, title: m.title.trim().slice(0, 80),
       ...(span ? { span: true, end: DATE_RE.test(m.end) && m.end >= m.date ? m.end : null } : {}),
+      ...(span && m.sick === true ? { sick: true } : {}),
       note: typeof m.note === 'string' ? m.note.slice(0, 500) : '',
       ...(m.archived ? { archived: true } : {}),
       updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : EPOCH,
@@ -216,19 +217,20 @@ export function deleteEntry(date, slot) {
 /* ---------------- other things (moments, routines) ---------------- */
 
 // span: false → one day; true → a period from `date` to `end` (null/'' = still going).
-const spanFields = (date, span, end) => (span ? { span: true, end: end && end >= date ? end : null } : {});
+// sick: a period of illness. It's always a period and gets a red striped background in every chart.
+const spanFields = (date, span, end, sick = false) => (span || sick ? { span: true, end: end && end >= date ? end : null, ...(sick ? { sick: true } : {}) } : {});
 
-export function addMoment({ date, title, note = '', span = false, end = null }) {
-  state.moments.push({ id: uid(), date, title: title.trim().slice(0, 80), ...spanFields(date, span, end), note: note.trim().slice(0, 500), updatedAt: now() });
+export function addMoment({ date, title, note = '', span = false, end = null, sick = false }) {
+  state.moments.push({ id: uid(), date, title: title.trim().slice(0, 80), ...spanFields(date, span, end, sick), note: note.trim().slice(0, 500), updatedAt: now() });
   state.moments.sort(byMoment);
   commit();
 }
 
-export function updateMoment(id, { date, title, note, span = false, end = null }) {
+export function updateMoment(id, { date, title, note, span = false, end = null, sick = false }) {
   const m = state.moments.find(x => x.id === id);
   if (!m) return;
-  delete m.span; delete m.end; delete m.demo;
-  Object.assign(m, { date, title: title.trim().slice(0, 80), ...spanFields(date, span, end), note: note.trim().slice(0, 500), updatedAt: now() });
+  delete m.span; delete m.end; delete m.sick; delete m.demo;
+  Object.assign(m, { date, title: title.trim().slice(0, 80), ...spanFields(date, span, end, sick), note: note.trim().slice(0, 500), updatedAt: now() });
   state.moments.sort(byMoment);
   commit();
 }
@@ -256,6 +258,11 @@ export function endMoment(id, end) {
 export const momentLast = m => (!m.span ? m.date : m.end ?? maxKey(m.date, todayKey()));
 export const momentCovers = (m, d) => d >= m.date && d <= momentLast(m);
 export const momentRunning = m => !!m.span && m.date <= todayKey() && (m.end == null || m.end >= todayKey());
+// Periods of illness that touch the range, clipped to it (archived ones too: the history stays).
+export const sickIn = (from, to) => state.moments
+  .filter(m => m.sick && m.date <= to && momentLast(m) >= from && m.date <= todayKey())
+  .map(m => ({ m, from: m.date < from ? from : m.date, to: minKey(minKey(momentLast(m), to), todayKey()) }));
+export const sickOn = date => state.moments.find(m => m.sick && momentCovers(m, date)) ?? null;
 // Moments that touch the range from–to.
 export const momentsIn = (from, to) => state.moments.filter(m => m.date <= to && momentLast(m) >= from);
 
@@ -566,7 +573,7 @@ export function canonicalOf(data) {
 }
 
 const projectEntry = ({ id, date, slot, mood, note, updatedAt }) => ({ id, date, slot, mood, note, updatedAt });
-const projectMoment = ({ id, date, title, span, end, note, archived, updatedAt }) => ({ id, date, title, ...(span ? { span: true, end: end ?? null } : {}), note, ...(archived ? { archived: true } : {}), updatedAt });
+const projectMoment = ({ id, date, title, span, end, sick, note, archived, updatedAt }) => ({ id, date, title, ...(span ? { span: true, end: end ?? null } : {}), ...(span && sick ? { sick: true } : {}), note, ...(archived ? { archived: true } : {}), updatedAt });
 const projectMed = ({ id, name, kind, color, archived, updatedAt, phases }) => ({
   id, name, kind: kind === 'therapy' ? 'therapy' : 'med', color, ...(archived ? { archived: true } : {}), updatedAt,
   phases: phases.map(({ id: pid, dose, start, end }) => ({ id: pid, dose, start, end })),
@@ -736,6 +743,7 @@ export function loadDemo() {
   demoMoment(d(23), 'Wochenende am See');
   demoMoment(d(9), 'Streit auf der Arbeit');
   state.moments.push({ id: uid(), date: d(48), title: 'Urlaub in Italien', span: true, end: d(36), note: '', updatedAt: new Date().toISOString(), demo: true });
+  state.moments.push({ id: uid(), date: d(31), title: 'Grippe', span: true, sick: true, end: d(26), note: 'Fieber, viel geschlafen', updatedAt: new Date().toISOString(), demo: true });
   state.moments.push({ id: uid(), date: d(20), title: 'Yogakurs', span: true, end: null, note: 'Dienstags und donnerstags', updatedAt: new Date().toISOString(), demo: true });
   state.moments.sort(byMoment);
   commit();

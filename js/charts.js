@@ -165,8 +165,32 @@ document.addEventListener('pointerdown', e => {
 });
 
 function tipHead(date) {
-  return h('div', { class: 'tip-head' }, formatWeekdayDate(date));
+  const sick = store.sickOn(date);
+  return h('div', { class: 'tip-head' }, formatWeekdayDate(date), sick ? h('span', { class: 'tip-sick' }, `Krank · ${sick.title}`) : null);
 }
+
+// Periods of illness: a red striped background across the plot, in every chart.
+let sickSeq = 0;
+function sickLayer(svg, { from, to, x, top, height }) {
+  const id = `sick-${++sickSeq}`;
+  svg.append(s('defs', null,
+    s('pattern', { id: `${id}-bg`, width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
+      s('rect', { width: 3, height: 8, class: 'sick-stripe' })),
+    s('pattern', { id: `${id}-bar`, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
+      s('rect', { width: 6, height: 6, class: 'sick-bar-bg' }), s('rect', { width: 3, height: 6, class: 'sick-bar-stripe' }))));
+  const g = s('g', { class: 'sick-layer' });
+  for (const r of store.sickIn(from, to)) {
+    const a = x(r.from, 0), w = Math.max(2, x(r.to, 1) - a);
+    g.append(s('rect', { x: a, y: top, width: w, height, class: 'sick-tint' }));
+    g.append(s('rect', { x: a, y: top, width: w, height, style: `fill:url(#${id}-bg)` }));
+  }
+  svg.append(g);
+  return `url(#${id}-bar)`;
+}
+
+// Legend entry, only when an illness falls into the range.
+const sickLegend = (from, to) => (from && store.sickIn(from, to).length
+  ? h('span', { class: 'legend-item' }, h('span', { class: 'key-sick' }), 'Krank') : null);
 
 function tipRow(key, value, label) {
   return h('div', { class: 'tip-row' }, key, h('strong', null, value), h('span', null, label));
@@ -202,6 +226,7 @@ export function moodChart(container, { from, to }) {
   const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
 
   yAxis(svg, y, left, right);
+  const sickFill = sickLayer(svg, { from, to, x, top: M.top, height: plotH });
   // up to 10 days every day gets its label, so each column of boxes has its day
   xAxis(svg, dateTicks(from, to, x, total <= 10 ? 28 : 54), M.top + plotH + 18);
 
@@ -288,12 +313,13 @@ export function moodChart(container, { from, to }) {
   container.replaceChildren(svg);
 }
 
-export function moodLegend(el) {
-  el.replaceChildren(
+export function moodLegend(el, { from, to } = {}) {
+  el.replaceChildren(...[
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, keyLine('day'), 'Tagesdurchschnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dots' }, [1, 3, 5].map(keyDot)), 'Einzelne Einträge'),
-  );
+    sickLegend(from, to),
+  ].filter(Boolean));
 }
 
 /* ---------------- mood + medication chart ---------------- */
@@ -326,6 +352,7 @@ export function medChart(container, { from, to, show = 'all' }) {
   const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
 
   yAxis(svg, y, left, right);
+  const sickFill = sickLayer(svg, { from, to, x, top: M.top, height: plotH });
 
   // event markers across the mood plot
   const markers = s('g', { class: 'markers' });
@@ -441,13 +468,14 @@ export function eventText(ev) {
   return ev.med.kind === 'therapy' ? `${n} beendet` : `${n} abgesetzt`;
 }
 
-export function medLegend(el, show = 'all') {
+export function medLegend(el, show = 'all', { from, to } = {}) {
   const meds = shownMeds(show);
-  el.replaceChildren(
+  el.replaceChildren(...[
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
     ...meds.map(m => h('span', { class: 'legend-item' }, h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } }), m.name)),
-  );
+    sickLegend(from, to),
+  ].filter(Boolean));
 }
 
 
@@ -456,7 +484,7 @@ export function medLegend(el, show = 'all') {
 export function momentsChart(container, { from, to }) {
   const moments = store.momentsIn(from, to);
   const colors = store.momentColors();
-  const colorOf = m => `var(--c${(colors.get(m.title.toLowerCase()) ?? 0) + 1})`;
+  const colorOf = m => (m.sick ? 'var(--bad)' : `var(--c${(colors.get(m.title.toLowerCase()) ?? 0) + 1})`);
   const total = diffDays(from, to) + 1;
   const hasMood = store.rangeStats(from, to).count > 0;
   if (!moments.length && !hasMood) return emptyState(container, 'Sobald du Stimmung und etwas unter „Anderes“ eingetragen hast, siehst du hier beides zusammen.');
@@ -490,6 +518,7 @@ export function momentsChart(container, { from, to }) {
   const y = scaleY(M.top, plotH);
   const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
   yAxis(svg, y, left, right);
+  const sickFill = sickLayer(svg, { from, to, x, top: M.top, height: plotH });
 
   // behind the mood curve, like the medication markers: a line in the entry's color runs
   // unbroken from the top of the plot down to its own lane (a day: its dot; a period: its start and end)
@@ -502,7 +531,7 @@ export function momentsChart(container, { from, to }) {
       const last = store.momentLast(m);
       const a = x(m.date < from ? from : m.date, 0);
       const e = x(last > to ? to : last, 1);
-      marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, e - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
+      if (!m.sick) marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, e - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
       if (m.date >= from) line(m, a);
       if (m.end != null && m.end <= to) line(m, e);
     } else {
@@ -537,7 +566,7 @@ export function momentsChart(container, { from, to }) {
         const xs = x(m.date < from ? from : m.date, 0);
         const xe = x(last > to ? to : last, 1);
         const open = m.end == null || m.end > to;
-        laneG.append(s('path', { d: barPath(xs, ly + 20, Math.max(3, xe - xs), 10, m.date >= from, !open), style: `fill:${colorOf(m)}`, class: 'lane-bar' }));
+        laneG.append(s('path', { d: barPath(xs, ly + 20, Math.max(3, xe - xs), 10, m.date >= from, !open), style: `fill:${m.sick ? sickFill : colorOf(m)}`, class: `lane-bar${m.sick ? ' sick' : ''}` }));
       } else {
         laneG.append(s('circle', { cx: x(m.date, 0.5), cy: ly + 25, r: total > 120 ? 3 : 4.5, style: `fill:${colorOf(m)}`, class: 'moment-dot' }));
       }
@@ -559,7 +588,10 @@ export function momentsChart(container, { from, to }) {
       const list = moments.filter(m => store.momentCovers(m, date));
       if (list.length) {
         box.append(h('div', { class: 'tip-sep' }));
-        for (const m of list) box.append(tipRow(h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: colorOf(m) } }), m.span ? 'Zeitraum' : 'Tag', m.title));
+        for (const m of list) {
+          if (m.sick) continue;   // already named in the tooltip head
+          box.append(tipRow(h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: colorOf(m) } }), m.span ? 'Zeitraum' : 'Tag', m.title));
+        }
       }
       return box;
     },
@@ -573,8 +605,9 @@ export function momentsLegend(el, { from, to }) {
   const seen = new Map();
   for (const m of store.momentsIn(from, to)) {
     const k = m.title.toLowerCase();
-    const cur = seen.get(k) ?? { title: m.title, span: false, first: m.date };
+    const cur = seen.get(k) ?? { title: m.title, span: false, sick: false, first: m.date };
     if (m.span) cur.span = true;
+    if (m.sick) cur.sick = true;
     if (m.date < cur.first) cur.first = m.date;
     seen.set(k, cur);
   }
@@ -583,6 +616,6 @@ export function momentsLegend(el, { from, to }) {
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
     ...titles.map(([k, v]) => h('span', { class: 'legend-item' },
-      h('span', { class: v.span ? 'key-bar' : 'key-dot', style: { background: `var(--c${(colors.get(k) ?? 0) + 1})` } }), v.title)),
+      v.sick ? h('span', { class: 'key-sick' }) : h('span', { class: v.span ? 'key-bar' : 'key-dot', style: { background: `var(--c${(colors.get(k) ?? 0) + 1})` } }), v.sick ? `${v.title} (krank)` : v.title)),
   );
 }
