@@ -6,23 +6,30 @@ Die Daten liegen zuerst im Browser auf deinem Gerät (`localStorage`). Optional 
 
 ## Funktionen
 
-- **Heute:** Stimmung auf einer 5er-Skala von „Sehr schlecht“ bis „Sehr gut“, mit optionaler Notiz. Die Tageszeit wird automatisch vorgewählt. Vergangene Tage lassen sich nachtragen.
-- **Feinregler:** Gesicht gedrückt halten und zur Seite ziehen: Unter den Gesichtern erscheint ein Regler für Zwischenwerte wie 3,6. Einfaches Tippen wählt weiter ganze Werte.
-- **Deine Woche:** Die letzten 7 Tage als Raster (Tageszeit × Tag). Ein Tipp auf ein Feld öffnet diesen Eintrag.
-- **Verlauf:** Durchschnitt, Veränderung zum Zeitraum davor, Grafik mit Einzelwerten, Tagesdurchschnitt und 7-Tage-Schnitt sowie Auswertung nach Tageszeit. Zeiträume: 7 Tage, 30 Tage, 90 Tage, 1 Jahr oder alles.
-- **Farbstreifen im Verlauf:** Unter der Zeitleiste der Verlaufsgrafik zeigt ein Farbstreifen jeden Tag mit Morgen, Mittag und Abend übereinander. Grafik und Streifen teilen sich dieselbe Zeitachse. Bis 30 Tage sind es einzelne Felder, darüber eine durchgehende Farbfläche.
-- **Medikamente & Therapien:** Medikamente mit Dosis oder Therapien mit Häufigkeit/Art erfassen (Therapien auch im Voraus: geplanter Beginn, geplante Änderung oder geplantes Ende), ändern, absetzen bzw. beenden oder wieder aufnehmen. Oben wählst du, ob du alles, nur Medikamente oder nur Therapien sehen willst; die Liste lässt sich zuklappen. Darunter siehst du:
-  - Stimmung und Einnahme-Zeiträume übereinander auf einer gemeinsamen Zeitachse
-  - die Ø Stimmung an Tagen mit und ohne Einnahme
-  - für jeden Beginn, jede Dosisänderung und jedes Absetzen: 4 Wochen vorher im Vergleich zu Woche 3 bis 6 danach (viele Medikamente wirken erst nach einigen Wochen)
-- **Anderes:** Separat neben dem Filter: Dinge eintragen, die du gemacht oder erlebt hast, entweder an einem Tag (z. B. Morgenroutine, ein gutes Gespräch) oder als Zeitraum wie bei Medikamenten (z. B. Urlaub, ein Yogakurs; ohne Ende läuft er weiter, bis du ihn beendest). Schon genutzte Einträge erscheinen als Schnellauswahl. Du siehst sie als Markierungen unter dem Stimmungsverlauf, die Ø Stimmung an Tagen mit und ohne (bei Wiederkehrendem) bzw. die Woche davor und danach (bei einmaligen Momenten) oder die 4 Wochen davor, die Zeit währenddessen und die 4 Wochen danach (bei Zeiträumen) und eine Chronik zum Bearbeiten.
-- **Krank:** In „Anderes“ öffnet der Knopf „Krank“ einen eigenen Bereich: laufende Krankheit sehen und mit „Wieder gesund“ beenden, eine neue eintragen (Name optional, von – bis, Notiz) und frühere ansehen oder bearbeiten. Krankheitstage liegen in allen Grafiken als rot gestreiftes Feld, stehen im Infofenster des Tages und sind im Wochenraster unter dem Tag markiert. In der Anderes-Grafik bekommen sie keine eigene Zeile.
-- **Archiv:** Medikamente, Therapien und „Anderes“-Einträge lassen sich archivieren statt löschen. Sie verschwinden aus den Listen und stehen in einem aufklappbaren „Archiv“ darunter, von wo du sie wiederherstellen kannst. Grafik und Auswertung berücksichtigen sie weiterhin, die Geschichte bleibt vollständig. Bei „Anderes“ lässt sich über „Aktivitäten verwalten“ auch eine ganze Aktivität (alle Einträge mit demselben Namen) auf einmal archivieren oder zurückholen.
-- **Einträge beim Stimmungseintrag:** Unter den Gesichtern stehen zwei Reiter, „Einträge“ (standardmäßig geöffnet) und „Notiz“ (eingeklappt). „Einträge“ zeigt eine Auswahl, in der du einzelne Einträge für den gewählten Tag mit einem Tipp setzt (oder wieder wegnimmst) und neue hinzufügst. Ein Zähler am Reiter zeigt, wie viele es für den Tag schon gibt. Laufende Zeiträume stehen getrennt darunter (mit ihrer Notiz); ein Tipp öffnet die Details und von dort lässt sich der Zeitraum bearbeiten oder mit Bestätigung heute beenden.
-- **Daten:** Sicherung als JSON herunterladen und wiederherstellen. Export als CSV-Tabelle für den Arzttermin. Beispieldaten zum Ausprobieren.
+Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf** zum Verstehen, **Medikamente** und **Alltag** zum Verwalten. Details öffnen sich in einem Fenster, wenn du etwas antippst.
+
+- **Heute**
+  - Stimmung auf einer 5er-Skala für Morgen, Mittag oder Abend; vergangene Tage über das Datum nachtragen. Gesicht gedrückt halten und zur Seite ziehen öffnet den Feinregler für Zwischenwerte wie 3,6.
+  - „Notiz hinzufügen“ öffnet ein Notizfeld (ohne dass die Tastatur von selbst aufgeht).
+  - „Was war heute?“: Aktivitäten mit einem Tipp setzen oder wegnehmen, neue mit „＋ Neu“. Laufende Zeitspannen und Krankheiten stehen darüber, ein Tipp zeigt Details und beendet sie. „Ich bin krank“ startet eine Krankheit ab heute.
+  - „Deine Woche“: die letzten 7 Tage als Farbraster.
+- **Verlauf**
+  - Eine Ansicht (7 T, 30 T, 90 T, 1 J, Alle) für alles. Kennzahlen: Durchschnitt, Veränderung, Anzahl Einträge.
+  - Eine Grafik: Stimmungskurve, darunter die Zeitleiste und ein Farbstreifen für Morgen, Mittag und Abend. Medikamente und Aktivitäten lassen sich als beschriftete Zeilen einblenden. Krankheitstage liegen rot gestreift im Hintergrund.
+  - „Was auffällt“: Medikamente und Aktivitäten mit dem größten Unterschied der Stimmung an Tagen mit und ohne.
+  - Durchschnitt nach Tageszeit und alle Stimmungen als Liste.
+- **Medikamente**
+  - Medikamente mit Dosis und Therapien mit Häufigkeit (Therapien auch im Voraus geplant). Ein Tipp öffnet die Details: Dosis ändern, absetzen oder wieder aufnehmen, Stimmung mit und ohne, jede Veränderung im Vergleich 4 Wochen vorher zu Woche 3 bis 6 danach, Bearbeiten und Archivieren.
+- **Alltag**
+  - Was gerade läuft, alle Aktivitäten mit Details (Stimmung mit und ohne, alle Einträge, für einen Tag nachtragen, archivieren) und „Zeitspanne anlegen“ für Urlaub, Kurse und Ähnliches.
+  - „Krank“: laufende Krankheit beenden, frühere ansehen und nachtragen.
+- **Archiv:** Medikamente, Therapien und Aktivitäten lassen sich archivieren statt löschen. Sie verschwinden aus den Listen, bleiben aber in Grafik und Auswertung.
+- **Daten:** Sicherung als JSON herunterladen und wiederherstellen, CSV-Tabelle für den Arzttermin, Beispieldaten zum Ausprobieren.
 - **Synchronisierung (optional):** In den Einstellungen mit E-Mail, Passwort und Code aus einer Authenticator-App anmelden. Danach gleicht Motra beim Öffnen, nach jedem Speichern und alle zwei Minuten ab.
-- **Erinnerungen:** Echte Mitteilungen zu frei wählbaren Zeiten für Morgen, Mittag und Abend, auch wenn die App geschlossen ist. Ist eine Tageszeit schon eingetragen, entfällt die Erinnerung. Kein Konto nötig; auf iPhone/iPad muss Motra auf dem Home-Bildschirm liegen.
+- **Erinnerungen:** Mitteilungen zu frei wählbaren Zeiten für Morgen, Mittag und Abend, auch wenn die App geschlossen ist. Ist eine Tageszeit schon eingetragen, entfällt die Erinnerung. Auf iPhone/iPad muss Motra auf dem Home-Bildschirm liegen.
 - **Offline und installierbar:** Die App lässt sich zum Home-Bildschirm hinzufügen (PWA) und funktioniert danach auch ohne Internet.
+
+Der Stand vor dem Umbau liegt im Branch `checkpoint-1`.
 
 ## Online stellen mit GitHub Pages
 

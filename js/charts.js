@@ -205,21 +205,62 @@ function emptyState(container, text) {
 
 /* ---------------- mood chart ---------------- */
 
-export function moodChart(container, { from, to }) {
+/* ---------------- the timeline: one chart for everything ----------------
+   Top: mood (single entries, daily average, 7-day trend), illness as red stripes behind it.
+   Middle: the shared date axis.
+   Below: a color band (Morgen / Mittag / Abend), then optional lanes for medications & therapies
+   and for activities. The lanes are labelled directly, so the legend stays short. */
+
+const kindOf = m => (m.kind === 'therapy' ? 'therapy' : 'med');
+
+export function timelineChart(container, { from, to, meds: withMeds = true, moments: withMoments = false }) {
   const width = Math.max(280, container.clientWidth);
   const total = diffDays(from, to) + 1;
   const stats = store.rangeStats(from, to);
-  if (!stats.count) return emptyState(container, 'Noch keine Einträge in diesem Zeitraum. Trag auf „Heute“ deine Stimmung ein, dann erscheint sie hier.');
 
-  // Layout: the curve on top, the shared timeline in the middle, below it a color band
-  // with one row per time of day (Morgen, Mittag, Abend), one column per day.
+  // which lanes to draw
+  const medLanes = !withMeds ? [] : [...store.getState().meds]
+    .filter(m => m.phases.some(p => p.start <= to && (p.end == null || p.end >= from)))
+    .sort((a, b) => (kindOf(a) === 'therapy') - (kindOf(b) === 'therapy'));
+  const colors = store.momentColors();
+  const momentList = withMoments ? store.momentsIn(from, to).filter(m => !m.sick) : [];
+  const groups = new Map();
+  for (const m of momentList) {
+    const key = m.title.toLowerCase();
+    const g = groups.get(key) ?? { key, name: m.title, items: [], span: false, first: m.date };
+    g.items.push(m); g.name = m.title;
+    if (m.span) g.span = true;
+    if (m.date < g.first) g.first = m.date;
+    groups.set(key, g);
+  }
+  const actLanes = [...groups.values()].sort((a, b) => Number(b.span) - Number(a.span) || a.first.localeCompare(b.first) || (a.key < b.key ? -1 : 1));
+  const colorOf = m => `var(--c${(colors.get(m.title.toLowerCase()) ?? 0) + 1})`;
+
+  if (!stats.count && !medLanes.length && !actLanes.length) {
+    return emptyState(container, 'Noch keine Einträge in diesem Zeitraum. Trag auf „Heute“ deine Stimmung ein, dann erscheint sie hier.');
+  }
+
+  // layout
   const M = { top: 12, right: 14, left: 30 };
-  const plotH = 200;
-  const bandTop = M.top + plotH + (total <= 10 ? 44 : 30);
-  const boxes = total <= 31;                       // up to a month: separate boxes; longer: one continuous surface
-  const ROW = boxes ? 16 : 13, GAP = boxes ? 3 : 2;
+  const plotH = 190;
+  const plotBottom = M.top + plotH;
+  const bandTop = plotBottom + (total <= 10 ? 44 : 30);
+  const boxes = total <= 31;
+  const ROW = boxes ? 15 : 12, GAP = boxes ? 3 : 2;
   const bandH = store.SLOTS.length * ROW + (store.SLOTS.length - 1) * GAP;
-  const H = bandTop + bandH + 6;
+  const LANE = 30, GROUP = 26;
+  const laneRows = [];
+  let yy = bandTop + bandH + 10;
+  const addGroup = (label, lanes, kind) => {
+    if (!lanes.length) return;
+    yy += GROUP;
+    laneRows.push({ label, y: yy - 9 });
+    for (const l of lanes) { laneRows.push({ kind, lane: l, y: yy }); yy += LANE; }
+  };
+  addGroup('MEDIKAMENTE & THERAPIEN', medLanes, 'med');
+  addGroup('AKTIVITÄTEN', actLanes, 'act');
+  const H = yy + 6;
+
   const left = M.left, right = width - M.right, plotW = right - left;
   const x = scaleX(from, to, left, plotW);
   const y = scaleY(M.top, plotH);
@@ -227,34 +268,31 @@ export function moodChart(container, { from, to }) {
 
   yAxis(svg, y, left, right);
   const sickFill = sickLayer(svg, { from, to, x, top: M.top, height: plotH });
-  // up to 10 days every day gets its label, so each column of boxes has its day
-  xAxis(svg, dateTicks(from, to, x, total <= 10 ? 28 : 54), M.top + plotH + 18);
+  xAxis(svg, dateTicks(from, to, x, total <= 10 ? 28 : 54), plotBottom + 18);
 
-  // continuous rows get rounded ends via a clip path
-  const clipId = `band-clip-${Math.random().toString(36).slice(2, 8)}`;
-  if (!boxes) {
-    svg.append(s('defs', null, s('clipPath', { id: clipId }, ...store.SLOTS.map((sl, r) =>
-      s('rect', { x: left, y: bandTop + r * (ROW + GAP), width: plotW, height: ROW, rx: 4 })))));
-  }
-  const band = s('g', { class: 'mood-band', ...(boxes ? {} : { 'clip-path': `url(#${clipId})` }), ...(boxes || plotW / total < 1 ? {} : { 'shape-rendering': 'crispEdges' }) });
-  store.SLOTS.forEach((sl, r) => {
-    const ry = bandTop + r * (ROW + GAP);
-    if (!boxes) band.append(s('rect', { x: left, y: ry, width: plotW, height: ROW, rx: 3, class: 'band-row' }));
-    for (let d = from; d <= to; d = addDays(d, 1)) {
-      const e = store.dayEntries(d)[sl.id];
-      const x0 = x(d, 0), x1 = x(d, 1);
-      if (boxes) {
-        const inset = Math.min(1.5, (x1 - x0) * 0.12);   // a small gap between boxes
-        band.append(s('rect', { x: x0 + inset, y: ry, width: Math.max(1, x1 - x0 - 2 * inset), height: ROW, rx: 3,
-          class: e ? 'band-cell' : 'band-cell empty', ...(e ? { style: `fill:${store.moodColor(e.mood)}` } : {}) }));
-      } else if (e) {
-        band.append(s('rect', { x: x0, y: ry, width: Math.max(0.6, x1 - x0), height: ROW, style: `fill:${store.moodColor(e.mood)}` }));
-      }
+  // markers in the plot: medication changes, single-day activities, faint bands for periods
+  const marks = s('g', { class: 'markers' });
+  for (const m of medLanes) {
+    for (const ev of store.medEvents(m)) {
+      if (ev.date < from || ev.date > to) continue;
+      const px = x(ev.date, 0);
+      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: plotBottom, class: 'marker', style: `stroke:var(--c${m.color + 1})` }));
     }
-  });
-  svg.append(band);
+  }
+  const fade = momentList.length > 40 ? .18 : .4;
+  for (const m of momentList) {
+    if (m.span) {
+      const last = store.momentLast(m);
+      const a = x(m.date < from ? from : m.date, 0), b = x(last > to ? to : last, 1);
+      marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
+    } else {
+      const px = x(m.date, 0.5);
+      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: plotBottom, class: 'marker', style: `stroke:${colorOf(m)};opacity:${fade}` }));
+    }
+  }
+  svg.append(marks);
 
-  // single entries
+  // mood: single entries, daily average, 7-day trend
   const dense = total > 120;
   const dots = s('g', { class: 'entries' });
   for (const e of store.getState().entries) {
@@ -263,10 +301,7 @@ export function moodChart(container, { from, to }) {
     dots.append(s('circle', { cx: x(e.date, off), cy: y(e.mood), r: dense ? 2.2 : total > 45 ? 2.8 : 4, style: `fill:${store.moodColor(e.mood)}`, class: 'entry-dot' }));
   }
   svg.append(dots);
-
-  // daily average line
-  const dayPts = [];
-  const trendPts = [];
+  const dayPts = [], trendPts = [];
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const v = store.dayAverage(d);
     if (v != null) dayPts.push({ date: d, value: v });
@@ -276,21 +311,78 @@ export function moodChart(container, { from, to }) {
   for (const run of runs(dayPts, 2)) {
     const pts = run.map(p => [x(p.date), y(p.value)]);
     svg.append(s('path', { d: linePath(pts), class: `line-day${dense ? ' faint' : ''}` }));
-    if (run.length === 1) svg.append(s('circle', { cx: pts[0][0], cy: pts[0][1], r: 2, class: 'day-dot' }));
   }
-  // 7-day trend
   let lastTrend = null;
   for (const run of runs(trendPts, 1)) {
     const pts = run.map(p => [x(p.date), y(p.value)]);
     svg.append(s('path', { d: smoothPath(pts), class: 'line-trend' }));
-    lastTrend = { ...run[run.length - 1], px: pts[pts.length - 1] };
+    lastTrend = pts[pts.length - 1];
   }
-  if (lastTrend) {
-    svg.append(s('circle', { cx: lastTrend.px[0], cy: lastTrend.px[1], r: 5, class: 'end-dot' }));
+  if (lastTrend) svg.append(s('circle', { cx: lastTrend[0], cy: lastTrend[1], r: 5, class: 'end-dot' }));
+  if (!stats.count) svg.append(s('text', { x: left + plotW / 2, y: M.top + plotH / 2, class: 'tick', 'text-anchor': 'middle' }, 'Keine Stimmungseinträge in diesem Zeitraum'));
+
+  // color band: one row per time of day
+  const clipId = `band-clip-${Math.random().toString(36).slice(2, 8)}`;
+  if (!boxes) {
+    svg.append(s('defs', null, s('clipPath', { id: clipId }, ...store.SLOTS.map((sl, r) =>
+      s('rect', { x: left, y: bandTop + r * (ROW + GAP), width: plotW, height: ROW, rx: 4 })))));
   }
+  const band = s('g', { class: 'mood-band', ...(boxes ? {} : { 'clip-path': `url(#${clipId})` }), ...(boxes || plotW / total < 1 ? {} : { 'shape-rendering': 'crispEdges' }) });
+  store.SLOTS.forEach((sl, r) => {
+    const ry = bandTop + r * (ROW + GAP);
+    if (!boxes) band.append(s('rect', { x: left, y: ry, width: plotW, height: ROW, class: 'band-row' }));
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      const e = store.dayEntries(d)[sl.id];
+      const x0 = x(d, 0), x1 = x(d, 1);
+      if (boxes) {
+        const inset = Math.min(1.5, (x1 - x0) * 0.12);
+        band.append(s('rect', { x: x0 + inset, y: ry, width: Math.max(1, x1 - x0 - 2 * inset), height: ROW, rx: 3,
+          class: e ? 'band-cell' : 'band-cell empty', ...(e ? { style: `fill:${store.moodColor(e.mood)}` } : {}) }));
+      } else if (e) {
+        band.append(s('rect', { x: x0, y: ry, width: Math.max(0.6, x1 - x0), height: ROW, style: `fill:${store.moodColor(e.mood)}` }));
+      }
+    }
+  });
+  svg.append(band);
+
+  // lanes
+  const lanesG = s('g', { class: 'lanes' });
+  for (const row of laneRows) {
+    if (row.label) { lanesG.append(s('text', { x: left, y: row.y, class: 'lane-group' }, row.label)); continue; }
+    const ly = row.y;
+    lanesG.append(s('line', { x1: left, x2: right, y1: ly + 19, y2: ly + 19, class: 'lane-track' }));
+    if (row.kind === 'med') {
+      const m = row.lane;
+      lanesG.append(s('text', { x: left, y: ly + 8, class: 'lane-name' }, m.name));
+      m.phases.forEach((p, pi) => {
+        const ps = p.start < from ? from : p.start;
+        const pe = p.end == null || p.end > to ? to : p.end;
+        if (ps > to || pe < from) return;
+        const prevTouching = pi > 0 && m.phases[pi - 1].end && addDays(m.phases[pi - 1].end, 1) === p.start && p.start > from;
+        const xs = x(ps, 0) + (prevTouching ? 2 : 0);
+        const open = p.end == null || p.end > to;
+        lanesG.append(s('path', { d: barPath(xs, ly + 14, Math.max(3, x(pe, 1) - xs), 10, p.start >= from, !open), style: `fill:var(--c${m.color + 1})`, class: 'lane-bar' }));
+      });
+    } else {
+      const l = row.lane;
+      lanesG.append(s('text', { x: left, y: ly + 8, class: 'lane-name' }, l.name));
+      for (const m of l.items) {
+        if (m.span) {
+          const last = store.momentLast(m);
+          const xs = x(m.date < from ? from : m.date, 0), xe = x(last > to ? to : last, 1);
+          const open = m.end == null || m.end > to;
+          lanesG.append(s('path', { d: barPath(xs, ly + 14, Math.max(3, xe - xs), 10, m.date >= from, !open), style: `fill:${colorOf(m)}`, class: 'lane-bar' }));
+        } else {
+          lanesG.append(s('circle', { cx: x(m.date, 0.5), cy: ly + 19, r: total > 120 ? 3 : 4.2, style: `fill:${colorOf(m)}`, class: 'moment-dot' }));
+        }
+      }
+    }
+  }
+  svg.append(lanesG);
+  void sickFill;
 
   attachHover(svg, {
-    from, to, left, width: plotW, top: M.top, bottom: bandTop + bandH, x,
+    from, to, left, width: plotW, top: M.top, bottom: H - 6, x,
     label: `Stimmungsverlauf vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
     describe: date => {
       const entries = store.dayEntries(date);
@@ -306,6 +398,12 @@ export function moodChart(container, { from, to }) {
       }
       const notes = store.SLOTS.map(sl => entries[sl.id]?.note).filter(Boolean);
       if (notes.length) box.append(h('div', { class: 'tip-note' }, notes.join(' · ')));
+      const active = medLanes.map(m => [m, store.activePhase(m, date)]).filter(([, p]) => p);
+      const acts = momentList.filter(m => store.momentCovers(m, date));
+      if (active.length || acts.length) box.append(h('div', { class: 'tip-sep' }));
+      for (const [m, p] of active) box.append(tipRow(h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } }), p.dose || '–', m.name));
+      for (const m of acts) box.append(tipRow(h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: colorOf(m) } }), '', m.title));
+      for (const m of medLanes) for (const ev of store.medEvents(m)) if (ev.date === date) box.append(h('div', { class: 'tip-note' }, eventText(ev)));
       return box;
     },
   });
@@ -313,144 +411,13 @@ export function moodChart(container, { from, to }) {
   container.replaceChildren(svg);
 }
 
-export function moodLegend(el, { from, to } = {}) {
+export function timelineLegend(el, { from, to }) {
   el.replaceChildren(...[
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, keyLine('day'), 'Tagesdurchschnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dots' }, [1, 3, 5].map(keyDot)), 'Einzelne Einträge'),
     sickLegend(from, to),
   ].filter(Boolean));
-}
-
-/* ---------------- mood + medication chart ---------------- */
-
-// `show` filters by kind: 'all', 'med' or 'therapy'.
-const shownMeds = show => [...store.getState().meds]
-  .filter(m => show === 'all' || !show || (m.kind === 'therapy' ? 'therapy' : 'med') === show)
-  .sort((a, b) => (a.kind === 'therapy') - (b.kind === 'therapy'));
-
-export function medChart(container, { from, to, show = 'all' }) {
-  // Medications first, then therapies, each group in the order they were added.
-  const meds = shownMeds(show);
-  const groupGap = meds.some(m => m.kind === 'therapy') && meds.some(m => m.kind !== 'therapy') ? 22 : 0;
-  const firstTherapy = meds.findIndex(m => m.kind === 'therapy');
-  const laneTop = (i, base) => base + i * 44 + (firstTherapy >= 0 && i >= firstTherapy ? groupGap : 0);
-  const width = Math.max(280, container.clientWidth);
-  const total = diffDays(from, to) + 1;
-  const hasMood = store.rangeStats(from, to).count > 0;
-  if (!meds.length && !hasMood) return emptyState(container, 'Sobald du Medikamente oder Therapien und ein paar Stimmungseinträge hast, siehst du hier beides übereinander.');
-
-  const M = { top: 12, right: 14, left: 30 };
-  const plotH = 150;
-  const lanesTop = M.top + plotH + 18;
-  const lanesBottom = laneTop(meds.length, lanesTop);
-  const axisY = lanesBottom + 16;
-  const H = axisY + (total <= 10 ? 22 : 8);
-  const left = M.left, right = width - M.right, plotW = right - left;
-  const x = scaleX(from, to, left, plotW);
-  const y = scaleY(M.top, plotH);
-  const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
-
-  yAxis(svg, y, left, right);
-  const sickFill = sickLayer(svg, { from, to, x, top: M.top, height: plotH });
-
-  // event markers across the mood plot
-  const markers = s('g', { class: 'markers' });
-  for (const m of meds) {
-    for (const ev of store.medEvents(m)) {
-      if (ev.date < from || ev.date > to) continue;
-      const px = x(ev.date, 0);
-      markers.append(s('line', { x1: px, x2: px, y1: M.top, y2: laneTop(meds.indexOf(m), lanesTop) + 16, class: 'marker', style: `stroke:var(--c${m.color + 1})` }));
-    }
-  }
-  svg.append(markers);
-
-  // mood: daily average dots + trend
-  const trendPts = [];
-  const dotG = s('g');
-  for (let d = from; d <= to; d = addDays(d, 1)) {
-    const v = store.dayAverage(d);
-    if (v != null) dotG.append(s('circle', { cx: x(d), cy: y(v), r: total > 120 ? 2 : 2.8, class: 'avg-dot' }));
-    const t = store.trend(d);
-    if (t != null) trendPts.push({ date: d, value: t });
-  }
-  svg.append(dotG);
-  for (const run of runs(trendPts, 1)) {
-    svg.append(s('path', { d: smoothPath(run.map(p => [x(p.date), y(p.value)])), class: 'line-trend' }));
-  }
-  if (!hasMood) {
-    svg.append(s('text', { x: left + plotW / 2, y: M.top + plotH / 2, class: 'tick', 'text-anchor': 'middle' }, 'Keine Stimmungseinträge in diesem Zeitraum'));
-  }
-
-  // medication lanes
-  const lanes = s('g', { class: 'lanes' });
-  meds.forEach((m, i) => {
-    const ly = laneTop(i, lanesTop);
-    if (groupGap && i === firstTherapy) lanes.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'THERAPIEN'));
-    if (groupGap && i === 0) lanes.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'MEDIKAMENTE'));
-    lanes.append(s('text', { x: left, y: ly + 10, class: 'lane-name' }, m.name));
-    lanes.append(s('line', { x1: left, x2: right, y1: ly + 21, y2: ly + 21, class: 'lane-track' }));
-    let any = false;
-    let lastLabelEnd = -Infinity;
-    m.phases.forEach((p, pi) => {
-      const ps = p.start < from ? from : p.start;
-      const pe = p.end == null || p.end > to ? to : p.end;
-      if (ps > to || pe < from) return;
-      any = true;
-      const x1 = x(ps, 0);
-      const prevTouching = pi > 0 && m.phases[pi - 1].end && addDays(m.phases[pi - 1].end, 1) === p.start && p.start > from;
-      const xs = x1 + (prevTouching ? 2 : 0); // 2px surface gap between consecutive doses
-      const x2 = x(pe, 1);
-      const w = Math.max(3, x2 - xs);
-      const open = p.end == null || p.end > to;
-      lanes.append(s('path', { d: barPath(xs, ly + 16, w, 10, p.start >= from, !open), style: `fill:var(--c${m.color + 1})`, class: 'lane-bar' }));
-      const label = p.dose || '';
-      const tx = Math.max(xs, left);
-      const estW = label.length * 6.2;
-      if (label && tx >= lastLabelEnd + 6 && tx + estW <= right) {
-        lanes.append(s('text', { x: tx, y: ly + 39, class: 'lane-dose' }, label));
-        lastLabelEnd = tx + estW;
-      }
-    });
-    if (!any) {
-      const upcoming = m.phases.find(p => p.start > to);
-      lanes.append(s('text', { x: right, y: ly + 10, class: 'lane-none', 'text-anchor': 'end' },
-        upcoming ? `beginnt ${formatDayMonth(upcoming.start)}` : 'nicht im Zeitraum'));
-    }
-  });
-  svg.append(lanes);
-
-  xAxis(svg, dateTicks(from, to, x), axisY);
-
-  attachHover(svg, {
-    from, to, left, width: plotW, top: M.top, bottom: lanesBottom, x,
-    label: `Stimmung, Medikamente und Therapien vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
-    describe: date => {
-      const box = h('div', null, tipHead(date));
-      const avg = store.dayAverage(date);
-      const t = store.trend(date);
-      if (avg == null) box.append(h('div', { class: 'tip-empty' }, 'Kein Stimmungseintrag'));
-      else box.append(tipRow(h('span', { class: 'key-dot neutral' }), num1(avg), 'Tagesdurchschnitt'));
-      if (t != null) box.append(tipRow(keyLine('trend'), num1(t), '7-Tage-Schnitt'));
-      const active = meds.map(m => [m, store.activePhase(m, date)]).filter(([, p]) => p);
-      if (active.length) {
-        box.append(h('div', { class: 'tip-sep' }));
-        for (const [m, p] of active) {
-          box.append(tipRow(h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } }), p.dose || '–', m.name));
-        }
-      } else if (meds.length) {
-        box.append(h('div', { class: 'tip-empty' }, 'Keine Medikamente oder Therapien'));
-      }
-      for (const m of meds) {
-        for (const ev of store.medEvents(m)) {
-          if (ev.date === date) box.append(h('div', { class: 'tip-note' }, eventText(ev)));
-        }
-      }
-      return box;
-    },
-  });
-
-  container.replaceChildren(svg);
 }
 
 // Bar with 4px rounded ends where the phase really starts/ends inside the range.
@@ -466,159 +433,4 @@ export function eventText(ev) {
   if (ev.type === 'restart') return `${n} wieder begonnen${ev.dose ? ` (${ev.dose})` : ''}`;
   if (ev.type === 'dose') return `${n}: ${ev.prevDose || '–'} → ${ev.dose || '–'}`;
   return ev.med.kind === 'therapy' ? `${n} beendet` : `${n} abgesetzt`;
-}
-
-export function medLegend(el, show = 'all', { from, to } = {}) {
-  const meds = shownMeds(show);
-  el.replaceChildren(...[
-    h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
-    h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
-    ...meds.map(m => h('span', { class: 'legend-item' }, h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } }), m.name)),
-    sickLegend(from, to),
-  ].filter(Boolean));
-}
-
-
-/* ---------------- mood + other things ("Anderes") ---------------- */
-
-export function momentsChart(container, { from, to }) {
-  // illness is not a lane: it only shows as the red striped field in the plot
-  const moments = store.momentsIn(from, to).filter(m => !m.sick);
-  const colors = store.momentColors();
-  const colorOf = m => (m.sick ? 'var(--bad)' : `var(--c${(colors.get(m.title.toLowerCase()) ?? 0) + 1})`);
-  const total = diffDays(from, to) + 1;
-  const hasMood = store.rangeStats(from, to).count > 0;
-  if (!moments.length && !hasMood) return emptyState(container, 'Sobald du Stimmung und etwas unter „Anderes“ eingetragen hast, siehst du hier beides zusammen.');
-
-  // One lane per title, like the medications: periods first, then titles that only have single days.
-  const groups = new Map();
-  for (const m of moments) {
-    const key = m.title.toLowerCase();
-    const g = groups.get(key) ?? { key, name: m.title, items: [], span: false, first: m.date };
-    g.items.push(m);
-    g.name = m.title;
-    if (m.span) g.span = true;
-    if (m.date < g.first) g.first = m.date;
-    groups.set(key, g);
-  }
-  const lanes = [...groups.values()].sort((a, b) => Number(b.span) - Number(a.span) || a.first.localeCompare(b.first) || (a.key < b.key ? -1 : 1));
-  const firstDay = lanes.findIndex(l => !l.span);
-  const groupGap = lanes.some(l => l.span) && firstDay >= 0 ? 22 : 0;
-  const LANE = 38;
-  const laneTop = (i, base) => base + i * LANE + (groupGap && i >= firstDay ? groupGap : 0);
-
-  const width = Math.max(280, container.clientWidth);
-  const M = { top: 12, right: 14, left: 30 };
-  const plotH = 150;
-  const lanesTop = M.top + plotH + 18;
-  const lanesBottom = laneTop(lanes.length, lanesTop);
-  const axisY = lanesBottom + 16;
-  const H = axisY + (total <= 10 ? 22 : 8);
-  const left = M.left, right = width - M.right, plotW = right - left;
-  const x = scaleX(from, to, left, plotW);
-  const y = scaleY(M.top, plotH);
-  const svg = s('svg', { viewBox: `0 0 ${width} ${H}`, width, height: H, class: 'chart-svg' });
-  yAxis(svg, y, left, right);
-  const sickFill = sickLayer(svg, { from, to, x, top: M.top, height: plotH });
-
-  // behind the mood curve, like the medication markers: a line in the entry's color runs
-  // unbroken from the top of the plot down to its own lane (a day: its dot; a period: its start and end)
-  const laneOf = new Map(lanes.map((l, i) => [l.key, i]));
-  const marks = s('g', { class: 'moments' });
-  const fade = moments.length > 40 ? .2 : .45;     // many daily entries would otherwise paint a wall
-  const line = (m, px) => marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: laneTop(laneOf.get(m.title.toLowerCase()), lanesTop) + 25, class: 'marker', style: `stroke:${colorOf(m)};opacity:${fade}` }));
-  for (const m of moments) {
-    if (m.span) {
-      const last = store.momentLast(m);
-      const a = x(m.date < from ? from : m.date, 0);
-      const e = x(last > to ? to : last, 1);
-      if (!m.sick) marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, e - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
-      if (m.date >= from) line(m, a);
-      if (m.end != null && m.end <= to) line(m, e);
-    } else {
-      line(m, x(m.date, 0.5));
-    }
-  }
-  svg.append(marks);
-
-  const dotG = s('g');
-  const trendPts = [];
-  for (let d = from; d <= to; d = addDays(d, 1)) {
-    const v = store.dayAverage(d);
-    if (v != null) dotG.append(s('circle', { cx: x(d), cy: y(v), r: total > 120 ? 2 : 2.8, class: 'avg-dot' }));
-    const t = store.trend(d);
-    if (t != null) trendPts.push({ date: d, value: t });
-  }
-  svg.append(dotG);
-  for (const run of runs(trendPts, 1)) svg.append(s('path', { d: smoothPath(run.map(p => [x(p.date), y(p.value)])), class: 'line-trend' }));
-  if (!hasMood) svg.append(s('text', { x: left + plotW / 2, y: M.top + plotH / 2, class: 'tick', 'text-anchor': 'middle' }, 'Keine Stimmungseinträge in diesem Zeitraum'));
-
-  // lanes with the title as label: bars for periods, dots for single days
-  const laneG = s('g', { class: 'lanes' });
-  lanes.forEach((l, i) => {
-    const ly = laneTop(i, lanesTop);
-    if (groupGap && i === 0) laneG.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'ZEITRÄUME'));
-    if (groupGap && i === firstDay) laneG.append(s('text', { x: left, y: ly - 8, class: 'lane-group' }, 'EINZELNE TAGE'));
-    laneG.append(s('text', { x: left, y: ly + 10, class: 'lane-name' }, l.name));
-    laneG.append(s('line', { x1: left, x2: right, y1: ly + 25, y2: ly + 25, class: 'lane-track' }));
-    for (const m of l.items) {
-      if (m.span) {
-        const last = store.momentLast(m);
-        const xs = x(m.date < from ? from : m.date, 0);
-        const xe = x(last > to ? to : last, 1);
-        const open = m.end == null || m.end > to;
-        laneG.append(s('path', { d: barPath(xs, ly + 20, Math.max(3, xe - xs), 10, m.date >= from, !open), style: `fill:${m.sick ? sickFill : colorOf(m)}`, class: `lane-bar${m.sick ? ' sick' : ''}` }));
-      } else {
-        laneG.append(s('circle', { cx: x(m.date, 0.5), cy: ly + 25, r: total > 120 ? 3 : 4.5, style: `fill:${colorOf(m)}`, class: 'moment-dot' }));
-      }
-    }
-  });
-  svg.append(laneG);
-
-  xAxis(svg, dateTicks(from, to, x), axisY);
-  attachHover(svg, {
-    from, to, left, width: plotW, top: M.top, bottom: lanesBottom, x,
-    label: `Stimmung und andere Einträge vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
-    describe: date => {
-      const box = h('div', null, tipHead(date));
-      const avg = store.dayAverage(date);
-      const t = store.trend(date);
-      if (avg == null) box.append(h('div', { class: 'tip-empty' }, 'Kein Stimmungseintrag'));
-      else box.append(tipRow(h('span', { class: 'key-dot neutral' }), num1(avg), 'Tagesdurchschnitt'));
-      if (t != null) box.append(tipRow(keyLine('trend'), num1(t), '7-Tage-Schnitt'));
-      const list = moments.filter(m => store.momentCovers(m, date));
-      if (list.length) {
-        box.append(h('div', { class: 'tip-sep' }));
-        for (const m of list) {
-          if (m.sick) continue;   // already named in the tooltip head
-          box.append(tipRow(h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: colorOf(m) } }), m.span ? 'Zeitraum' : 'Tag', m.title));
-        }
-      }
-      return box;
-    },
-  });
-  container.replaceChildren(svg);
-}
-
-// Legend like the medications: one entry per title in the range, in its color.
-export function momentsLegend(el, { from, to }) {
-  const colors = store.momentColors();
-  const seen = new Map();
-  for (const m of store.momentsIn(from, to)) {
-    if (m.sick) continue;
-    const k = m.title.toLowerCase();
-    const cur = seen.get(k) ?? { title: m.title, span: false, sick: false, first: m.date };
-    if (m.span) cur.span = true;
-    if (m.sick) cur.sick = true;
-    if (m.date < cur.first) cur.first = m.date;
-    seen.set(k, cur);
-  }
-  const titles = [...seen].sort((a, b) => Number(b[1].span) - Number(a[1].span) || a[1].first.localeCompare(b[1].first) || (a[0] < b[0] ? -1 : 1));
-  el.replaceChildren(
-    h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
-    h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
-    ...titles.map(([k, v]) => h('span', { class: 'legend-item' },
-      h('span', { class: v.span ? 'key-bar' : 'key-dot', style: { background: `var(--c${(colors.get(k) ?? 0) + 1})` } }), v.title)),
-    ...(sickLegend(from, to) ? [sickLegend(from, to)] : []),
-  );
 }

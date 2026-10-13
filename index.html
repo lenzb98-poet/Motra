@@ -70,28 +70,12 @@
             <p class="mood-caption" id="mood-caption" aria-live="polite">Tippe auf ein Gesicht.</p>
           </fieldset>
 
-          <!-- Next to the note: pick single things you did (periods live under Behandlung → Anderes) -->
-          <div class="entry-tabs" role="group" aria-label="Zusatz zum Eintrag">
-            <button type="button" class="entry-tab" id="tab-other" aria-expanded="false" aria-controls="panel-other">Einträge <span class="entry-count" id="tab-other-count" hidden></span></button>
-            <button type="button" class="entry-tab" id="tab-note" aria-expanded="false" aria-controls="panel-note">Notiz <span class="optional">optional</span><span class="entry-count dot" id="tab-note-dot" hidden aria-label="enthält Text"></span></button>
-          </div>
-          <div id="panel-note" role="region" aria-labelledby="tab-note" class="entry-panel" hidden>
+          <!-- A note is optional: it opens on request (or by itself if the entry already has one) -->
+          <button type="button" class="note-toggle" id="btn-note" aria-expanded="false" aria-controls="note-wrap">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg><span id="btn-note-label">Notiz hinzufügen</span>
+          </button>
+          <div id="note-wrap" hidden>
             <textarea id="entry-note" name="note" rows="3" maxlength="1000" placeholder="Was beschäftigt dich? Wie hast du geschlafen?" aria-label="Notiz"></textarea>
-          </div>
-          <div id="panel-other" role="region" aria-labelledby="tab-other" class="entry-panel today-other" hidden>
-            <p class="card-meta" id="today-other-hint"></p>
-            <h3 class="entry-sub" id="today-other-days-label" hidden>Einzelne Einträge</h3>
-            <div class="other-quick" id="today-other-chips"></div>
-            <button type="button" class="link-btn" id="today-other-manage" hidden>Aktivitäten verwalten</button>
-            <div class="today-other-add">
-              <input type="text" id="today-other-input" maxlength="80" placeholder="Neu, z. B. Spaziergang" aria-label="Neuer Eintrag" autocomplete="off">
-              <button type="button" class="btn" id="today-other-add">Hinzufügen</button>
-            </div>
-            <!-- running periods, kept apart from the single entries; a tap + confirmation ends one -->
-            <div id="today-other-periods" hidden>
-              <h3 class="entry-sub">Laufende Zeiträume</h3>
-              <div class="period-list" id="today-other-period-list"></div>
-            </div>
           </div>
 
           <div class="form-actions">
@@ -99,6 +83,21 @@
             <button type="submit" class="btn primary" id="btn-save" disabled>Speichern</button>
           </div>
         </form>
+
+        <!-- What else was going on that day: activities with one tap, running periods, illness -->
+        <section class="card day-card" aria-labelledby="h-day">
+          <div class="card-head">
+            <h2 id="h-day" class="h2">Was war heute?</h2>
+            <p class="card-meta" id="day-meta"></p>
+          </div>
+          <div class="period-list" id="day-running"></div>
+          <div class="other-quick" id="day-chips"></div>
+          <div class="day-add" id="day-add" hidden>
+            <input type="text" id="day-input" maxlength="80" placeholder="z. B. Spaziergang" aria-label="Neue Aktivität" autocomplete="off">
+            <button type="button" class="btn" id="day-add-btn">Hinzufügen</button>
+          </div>
+          <button type="button" class="btn ghost wide sick-btn" id="btn-im-sick"><span class="key-sick" aria-hidden="true"></span>Ich bin krank</button>
+        </section>
 
         <section class="card week-card" aria-labelledby="h-week">
           <div class="card-head">
@@ -114,19 +113,29 @@
       <section class="view" id="view-verlauf" data-view="verlauf" aria-labelledby="h-verlauf" hidden>
         <div class="view-head">
           <h1 id="h-verlauf" class="display">Verlauf</h1>
-          <div class="segmented" role="radiogroup" aria-label="Zeitraum" id="range-verlauf"></div>
+          <div class="segmented" role="radiogroup" aria-label="Ansicht" id="range"></div>
         </div>
 
         <div class="stats" id="stats"></div>
 
-        <section class="card chart-card" aria-labelledby="h-mood-chart">
-          <div class="card-head">
-            <h2 id="h-mood-chart" class="h2">Stimmung über die Zeit</h2>
+        <section class="card chart-card" aria-labelledby="h-timeline">
+          <div class="card-head stack">
+            <h2 id="h-timeline" class="h2">Stimmung über die Zeit</h2>
+            <div class="layer-toggles" id="layers" role="group" aria-label="Zusätzlich zeigen"></div>
           </div>
-          <div class="legend" id="mood-chart-legend"></div>
-          <div class="chart" id="mood-chart"></div>
+          <div class="legend" id="timeline-legend"></div>
+          <div class="chart" id="timeline"></div>
           <p class="chart-note">Farbstreifen unter der Zeitleiste: oben Morgen, in der Mitte Mittag, unten Abend.</p>
-          <div class="mood-scale-legend" id="mood-band-legend"></div>
+          <div class="mood-scale-legend" id="band-legend"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-insights">
+          <div class="card-head">
+            <h2 id="h-insights" class="h2">Was auffällt</h2>
+            <p class="card-meta">Stimmung an Tagen mit und ohne, im gewählten Zeitraum. Tippe für Details.</p>
+          </div>
+          <div id="insights" class="insights"></div>
+          <p class="scale-note">Das zeigt, was zeitlich zusammenfällt, nicht was die Ursache ist.</p>
         </section>
 
         <section class="card" aria-labelledby="h-slots">
@@ -139,140 +148,62 @@
 
         <section class="card" aria-labelledby="h-entries">
           <div class="card-head">
-            <h2 id="h-entries" class="h2">Alle Einträge</h2>
+            <h2 id="h-entries" class="h2">Alle Stimmungen</h2>
             <p class="card-meta">Tippe auf einen Eintrag, um ihn zu ändern</p>
           </div>
           <div id="entry-list" class="entry-list"></div>
-          <button type="button" class="btn ghost wide" id="btn-more-entries" hidden>Ältere Einträge anzeigen</button>
+          <button type="button" class="btn ghost wide" id="btn-more-entries" hidden>Ältere anzeigen</button>
         </section>
       </section>
 
       <!-- ============ MEDIKAMENTE ============ -->
       <section class="view" id="view-medis" data-view="medis" aria-labelledby="h-medis" hidden>
         <div class="view-head">
-          <h1 id="h-medis" class="display">Medikamente &amp; Therapien</h1>
-          <div class="view-switch">
-            <div class="segmented" role="radiogroup" aria-label="Anzeigen" id="kind-filter"></div>
-            <button type="button" class="other-toggle" id="other-toggle" aria-pressed="false">Anderes</button>
-          </div>
+          <h1 id="h-medis" class="display">Medikamente</h1>
+          <div class="segmented" role="radiogroup" aria-label="Anzeigen" id="kind-filter" hidden></div>
+        </div>
+        <div class="med-list" id="med-list"></div>
+        <button type="button" class="btn dashed wide" id="btn-add-med">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg>
+          Medikament oder Therapie hinzufügen
+        </button>
+        <div id="med-archive"></div>
+      </section>
+
+      <!-- ============ ALLTAG ============ -->
+      <section class="view" id="view-alltag" data-view="alltag" aria-labelledby="h-alltag" hidden>
+        <div class="view-head">
+          <h1 id="h-alltag" class="display">Alltag</h1>
         </div>
 
-        <div class="view-part" id="medis-main">
-        <!-- The list folds away so the charts are visible at a glance -->
-        <details class="card med-details" id="med-details">
-          <summary class="med-summary">
-            <span class="med-summary-text">
-              <span class="h2" id="h-med-list">Deine Medikamente &amp; Therapien</span>
-              <span class="card-meta" id="med-summary-meta"></span>
-            </span>
-            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </summary>
-          <div class="med-details-body">
-            <div class="med-list" id="med-list"></div>
-            <button type="button" class="btn dashed wide" id="btn-add-med">
+        <section class="card" id="alltag-running-card" aria-labelledby="h-running" hidden>
+          <div class="card-head"><h2 id="h-running" class="h2">Läuft gerade</h2></div>
+          <div class="period-list" id="alltag-running"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-activities">
+          <div class="card-head">
+            <h2 id="h-activities" class="h2">Aktivitäten</h2>
+            <p class="card-meta">Einzelne Tage trägst du auf „Heute“ ein. Hier legst du Zeitspannen an und siehst, was dir guttut.</p>
+          </div>
+          <div class="activity-list" id="activity-list"></div>
+          <div class="card-actions">
+            <button type="button" class="btn dashed wide" id="btn-new-span">
               <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg>
-              Medikament oder Therapie hinzufügen
+              Zeitspanne anlegen
             </button>
           </div>
-        </details>
-
-        <section class="card chart-card" aria-labelledby="h-med-chart">
-          <div class="card-head stack">
-            <h2 id="h-med-chart" class="h2">Stimmung &amp; Behandlung</h2>
-            <div class="segmented small" role="radiogroup" aria-label="Zeitraum" id="range-medis"></div>
-          </div>
-          <div class="legend" id="med-chart-legend"></div>
-          <div class="chart" id="med-chart"></div>
+          <div id="activity-archive"></div>
         </section>
 
-        <section class="card" aria-labelledby="h-compare">
-          <div class="card-head">
-            <h2 id="h-compare" class="h2">Mit und ohne</h2>
-            <p class="card-meta">Ø Stimmung an Tagen mit und ohne Medikament oder Therapie, im gewählten Zeitraum</p>
-          </div>
-          <div id="compare" class="compare"></div>
-        </section>
-
-        <section class="card" aria-labelledby="h-events">
-          <div class="card-head">
-            <h2 id="h-events" class="h2">Veränderungen</h2>
-            <p class="card-meta">4 Wochen vorher im Vergleich zu Woche 3 bis 6 danach</p>
-          </div>
-          <div id="events" class="events"></div>
-        </section>
-
-        <aside class="note-box">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"/></svg>
-          <p>Diese Auswertung zeigt, wie Stimmung und Behandlung zeitlich zusammenfallen. Sie zeigt keine Ursachen: Schlaf, Stress, Jahreszeit und vieles mehr wirken mit, und viele Medikamente und Therapien brauchen mehrere Wochen bis zur vollen Wirkung. Nimm die Grafiken als Gesprächsgrundlage für deinen Arzt- oder Therapietermin. Ändere Medikamente nie ohne ärztliche Rücksprache.</p>
-        </aside>
-        </div>
-
-        <!-- "Anderes": routines and moments that made a difference, kept apart from treatment -->
-        <div class="view-part" id="other-main" hidden>
-          <form class="card other-form" id="other-form" autocomplete="off">
-            <h2 class="h2">Was hast du gemacht oder erlebt?</h2>
-            <div class="other-quick" id="other-quick"></div>
-            <button type="button" class="link-btn" id="other-manage" hidden>Aktivitäten verwalten</button>
-            <div class="field">
-              <label for="other-title">Eintrag</label>
-              <input type="text" id="other-title" maxlength="80" placeholder="z. B. Morgenroutine, Spaziergang, gutes Gespräch" required>
-            </div>
-            <div class="segmented kind-switch" role="radiogroup" aria-label="Dauer" id="other-mode"></div>
-            <div class="field-row">
-              <div class="field">
-                <label for="other-date" id="other-date-label">Tag</label>
-                <input type="date" id="other-date" required>
-              </div>
-              <div class="field" id="other-end-field" hidden>
-                <label for="other-end">Bis <span class="optional">leer = läuft noch</span></label>
-                <input type="date" id="other-end">
-              </div>
-            </div>
-            <div class="field">
-              <label for="other-note">Notiz <span class="optional">optional</span></label>
-              <input type="text" id="other-note" maxlength="500" placeholder="Was war besonders?">
-            </div>
-            <p class="form-error" id="other-error" hidden></p>
-            <div class="form-actions"><button type="submit" class="btn primary">Eintragen</button></div>
-          </form>
-
-          <!-- Illness has its own area, opened with this button -->
-          <button type="button" class="card sick-card" id="btn-sick">
-            <span class="key-sick big" aria-hidden="true"></span>
-            <span class="sick-card-text">
-              <span class="h2">Krank</span>
-              <span class="card-meta" id="sick-status"></span>
-            </span>
-            <svg class="chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-
-          <section class="card chart-card" aria-labelledby="h-other-chart">
-            <div class="card-head stack">
-              <h2 id="h-other-chart" class="h2">Stimmung &amp; Anderes</h2>
-              <div class="segmented small" role="radiogroup" aria-label="Zeitraum" id="range-other"></div>
-            </div>
-            <div class="legend" id="other-chart-legend"></div>
-            <div class="chart" id="other-chart"></div>
-          </section>
-
-          <section class="card" aria-labelledby="h-other-effect">
-            <div class="card-head">
-              <h2 id="h-other-effect" class="h2">Wirkung</h2>
-              <p class="card-meta">Wiederkehrendes: Ø Stimmung an Tagen mit und ohne, im gewählten Zeitraum. Einzelne Momente: der Tag im Vergleich zur Woche davor und danach. Zeiträume: die 4 Wochen davor, die Zeit währenddessen und die 4 Wochen danach.</p>
-            </div>
-            <div id="other-effect" class="compare"></div>
-          </section>
-
-          <section class="card" aria-labelledby="h-other-list">
-            <div class="card-head">
-              <h2 id="h-other-list" class="h2">Chronik</h2>
-              <p class="card-meta">Tippe auf einen Eintrag, um ihn zu ändern</p>
-            </div>
-            <div id="other-list" class="other-list"></div>
-            <button type="button" class="btn ghost wide" id="btn-more-other" hidden>Ältere anzeigen</button>
-            <div id="other-archive"></div>
-          </section>
-        </div>
+        <button type="button" class="card sick-card" id="btn-sick">
+          <span class="key-sick big" aria-hidden="true"></span>
+          <span class="sick-card-text">
+            <span class="h2">Krank</span>
+            <span class="card-meta" id="sick-status"></span>
+          </span>
+          <svg class="chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </section>
     </main>
 
@@ -287,7 +218,11 @@
       </a>
       <a href="#medis" class="tab" data-tab="medis">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pill"/></svg>
-        <span>Behandlung</span>
+        <span>Medikamente</span>
+      </a>
+      <a href="#alltag" class="tab" data-tab="alltag">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-life"/></svg>
+        <span>Alltag</span>
       </a>
     </nav>
   </div>
@@ -323,6 +258,10 @@
       <symbol id="i-calendar" viewBox="0 0 24 24">
         <rect x="3.5" y="5" width="17" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
         <path d="M3.5 10h17M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-life" viewBox="0 0 24 24">
+        <path d="M5 19c0-7.5 5-12.5 14-13-.3 8.8-5.3 13.6-12.6 13.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M5 19c2.6-4.2 5.7-7 9.5-8.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
       </symbol>
       <symbol id="i-today" viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/>

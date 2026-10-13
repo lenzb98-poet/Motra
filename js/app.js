@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import * as sync from './sync.js';
 import * as push from './push.js';
-import { moodChart, moodLegend, medChart, medLegend, eventText, momentsChart, momentsLegend } from './charts.js';
+import { timelineChart, timelineLegend, eventText } from './charts.js';
 import {
   h, s, icon, todayKey, addDays, diffDays, fromKey, formatLong, formatDayMonth, formatShort, formatWeekday,
   relativeDay, num1, signed1,
@@ -13,14 +13,19 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { rangeVerlauf: '30', rangeMedis: '90', rangeOther: '90', kindFilter: 'all', lastKind: 'all', medListOpen: null, backupHiddenOn: null };
+let prefs = { range: '30', layers: { meds: true, moments: false }, kindFilter: 'all', backupHiddenOn: null };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
     localStorage.setItem(PREFS_KEY, saved);
     localStorage.removeItem(LEGACY_PREFS_KEY);
   }
-  prefs = { ...prefs, ...JSON.parse(saved || '{}') };
+  const old = JSON.parse(saved || '{}');
+  prefs = { ...prefs, ...old };
+  // earlier versions had a range per tab and "Anderes" inside the medication tab
+  if (!old.range && old.rangeVerlauf) prefs.range = old.rangeVerlauf;
+  if (!['all', 'med', 'therapy'].includes(prefs.kindFilter)) prefs.kindFilter = 'all';
+  for (const k of ['rangeVerlauf', 'rangeMedis', 'rangeOther', 'lastKind', 'medListOpen', 'entryTab', 'todayOtherOpen']) delete prefs[k];
 } catch (e) { /* ignore */ }
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
 
@@ -135,7 +140,7 @@ function field(label, input, extraClass = '') {
 
 /* ---------------- routing ---------------- */
 
-const VIEWS = ['heute', 'verlauf', 'medis'];
+const VIEWS = ['heute', 'verlauf', 'medis', 'alltag'];
 let currentView = 'heute';
 
 function route() {
@@ -155,6 +160,7 @@ function renderView() {
   if (currentView === 'heute') renderHeute();
   if (currentView === 'verlauf') renderVerlauf();
   if (currentView === 'medis') renderMedis();
+  if (currentView === 'alltag') renderAlltag();
   renderBanners();
 }
 
@@ -169,7 +175,7 @@ function loadFormEntry() {
   form.note = e?.note ?? '';
   form.dirty = false;
   $('#entry-note').value = form.note;
-  $('#tab-note-dot').hidden = !form.note.trim();
+  showNote(!!form.note.trim());
 }
 
 function selectEntry(date, slot) {
@@ -189,33 +195,36 @@ function greeting() {
   return 'Gute Nacht';
 }
 
-/* Single things for the day of the form: tap a chip to set or remove it. */
-function renderTodayOther() {
+// The note opens on request; an entry that already has one shows it right away. No auto focus:
+// the keyboard should only come up when the field itself is tapped.
+function showNote(open) {
+  $('#note-wrap').hidden = !open;
+  $('#btn-note').hidden = open;
+  $('#btn-note').setAttribute('aria-expanded', String(open));
+}
+
+/* "Was war heute?": activities of the chosen day with one tap, periods running then, illness. */
+let dayAddOpen = false;
+
+function renderDay() {
   const date = form.date;
-  const isToday = date === todayKey();
+  const today = todayKey();
+  const isToday = date === today;
   const day = isToday ? 'heute' : relativeDay(date) === 'Gestern' ? 'gestern' : `am ${formatDayMonth(date)}`;
+  $('#h-day').textContent = `Was war ${day}?`;
   const moments = store.getState().moments;
   const colors = store.momentColors();
-  const onDay = moments.filter(m => !m.span && !m.archived && m.date === date);          // single entries I can toggle
-  const running = moments.filter(m => m.span && !m.archived && store.momentCovers(m, date)); // periods covering that day
-  const has = key => onDay.find(m => m.title.toLowerCase() === key);
-  const count = onDay.length + running.length;
-  const badge = $('#tab-other-count');
-  badge.hidden = !count;
-  badge.textContent = String(count);
-  $('#today-other-hint').textContent = `Was hast du ${day === 'heute' ? 'heute ' : day === 'gestern' ? 'gestern ' : `${day} `}gemacht oder erlebt? Tippe an, noch mal tippen nimmt es weg.`;
 
-  // Running periods, kept apart from the single entries. Tapping one asks for confirmation, then ends it today.
-  const periods = moments.filter(m => m.span && !m.archived && store.momentRunning(m) && (m.end == null || m.end > todayKey()))   // ended today = done
-    .sort((a, b) => a.date.localeCompare(b.date));
-  $('#today-other-periods').hidden = !periods.length;
-  $('#today-other-days-label').hidden = !periods.length;
-  $('#today-other-period-list').replaceChildren(...periods.map(m => endablePeriod(m, colors)));
+  // periods (incl. illness) that cover the day: a row each, tap for details
+  const covering = moments.filter(m => m.span && !m.archived && store.momentCovers(m, date)).sort((a, b) => Number(!!b.sick) - Number(!!a.sick) || a.date.localeCompare(b.date));
+  $('#day-running').replaceChildren(...covering.map(m => endablePeriod(m, colors)));
+  $('#day-running').hidden = !covering.length;
 
-  // Titles that were used for single days before, most frequent first.
+  // single activities: titles used before, most frequent first; tap sets or removes it for this day
+  const onDay = moments.filter(m => !m.span && !m.archived && m.date === date);
   const counts = new Map();
   for (const m of moments) {
-    if (m.span || m.archived) continue;
+    if (m.span || m.archived || m.sick) continue;
     const k = m.title.toLowerCase();
     const c = counts.get(k) ?? { title: m.title, n: 0, last: '' };
     c.n++;
@@ -224,27 +233,55 @@ function renderTodayOther() {
   }
   for (const m of onDay) if (!counts.has(m.title.toLowerCase())) counts.set(m.title.toLowerCase(), { title: m.title, n: 1, last: m.date });
   const titles = [...counts.entries()].sort((a, b) => b[1].n - a[1].n || b[1].last.localeCompare(a[1].last)).slice(0, 12);
-  $('#today-other-chips').replaceChildren(...titles.map(([key, tt]) => {
-    const on = !!has(key);
-    return h('button', {
-      type: 'button', class: `quick-chip${on ? ' on' : ''}`, 'aria-pressed': String(on),
-      onclick: () => toggleTodayOther(tt.title),
-    }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, on ? h('small', null, '✓') : null);
-  }));
-  $('#today-other-chips').hidden = !titles.length;
-  $('#today-other-manage').hidden = !moments.length;
+  const has = key => onDay.some(m => m.title.toLowerCase() === key);
+  $('#day-chips').replaceChildren(
+    ...titles.map(([key, tt]) => {
+      const on = has(key);
+      return h('button', { type: 'button', class: `quick-chip${on ? ' on' : ''}`, 'aria-pressed': String(on), onclick: () => toggleDayActivity(tt.title) },
+        h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, on ? h('small', null, '✓') : null);
+    }),
+    h('button', { type: 'button', class: `quick-chip add${dayAddOpen ? ' on' : ''}`, 'aria-expanded': String(dayAddOpen),
+      onclick: () => { dayAddOpen = !dayAddOpen; renderDay(); if (dayAddOpen) $('#day-input').focus(); } }, '＋ Neu'));
+  $('#day-add').hidden = !dayAddOpen;
+  $('#day-meta').textContent = titles.length
+    ? 'Tippe an, was du gemacht oder erlebt hast. Noch mal tippen nimmt es weg.'
+    : 'Zum Beispiel eine Morgenroutine, ein Spaziergang oder ein gutes Gespräch. Tippe auf „＋ Neu“.';
+
+  // "Ich bin krank": for today, as long as no illness is running
+  $('#btn-im-sick').hidden = !isToday || covering.some(m => m.sick);
+}
+
+function toggleDayActivity(title) {
+  const key = title.trim().toLowerCase();
+  if (!key) return;
+  const existing = store.getState().moments.find(m => !m.span && !m.archived && m.date === form.date && m.title.toLowerCase() === key);
+  if (existing) store.deleteMoment(existing.id);
+  else store.addMoment({ date: form.date, title });
+}
+
+function addDayActivity() {
+  const input = $('#day-input');
+  const title = input.value.trim();
+  if (!title) { input.focus(); return; }
+  const key = title.toLowerCase();
+  // adding what is already there is a no-op, not a toggle
+  if (!store.getState().moments.some(m => !m.span && !m.archived && m.date === form.date && m.title.toLowerCase() === key)) store.addMoment({ date: form.date, title });
+  input.value = '';
+  dayAddOpen = false;
+  toast(`${title} eingetragen`);
+  renderDay();
 }
 
 /* ---------- Krank: its own area ---------- */
 
 const sickRunning = () => store.illnesses().find(m => !m.archived && store.momentRunning(m) && (m.end == null || m.end > todayKey()));
 
-function renderSickCard() {
+function renderSickStatus() {
   const cur = sickRunning();
   const all = store.illnesses();
   $('#sick-status').textContent = cur
     ? `${cur.title} seit ${formatShort(cur.date)}`
-    : all.length ? `Zuletzt: ${all[0].title}, ${momentDateLabel(all[0])}` : 'Krankheitstage eintragen';
+    : all.length ? `Zuletzt: ${all[0].title}, ${momentDateLabel(all[0])}` : 'Krankheitstage nachtragen und ansehen';
   $('#btn-sick').classList.toggle('active', !!cur);
 }
 
@@ -290,28 +327,6 @@ function sickSheet() {
     past.length ? h('section', { class: 'sheet-section' }, h('h3', null, 'Frühere'), h('div', { class: 'period-list' }, ...past.map(row))) : null);
 }
 
-/* Whole activities (all entries with one title): archive them out of the quick choices, or bring them back. */
-function activitiesSheet() {
-  const acts = store.momentActivities();
-  const colors = store.momentColors();
-  const row = a => h('div', { class: `activity${a.archived ? ' archived' : ''}` },
-    h('span', { class: 'key-dot', style: { background: momentCss(colors, a.title) } }),
-    h('span', { class: 'activity-name' }, a.title, h('small', null, `${a.n} ${a.n === 1 ? 'Eintrag' : 'Einträge'}`)),
-    h('button', {
-      type: 'button', class: 'btn small',
-      onclick: () => {
-        store.archiveActivity(a.title, !a.archived);
-        toast(a.archived ? `${a.title} aus dem Archiv geholt` : `${a.title} archiviert`);
-        activitiesSheet();
-      },
-    }, a.archived ? 'Wiederherstellen' : 'Archivieren'));
-  const active = acts.filter(a => !a.archived), done = acts.filter(a => a.archived);
-  openSheet('Aktivitäten',
-    h('p', { class: 'sheet-text' }, 'Archivierte Aktivitäten verschwinden aus der Schnellauswahl und den Listen. Ihre Einträge bleiben in Grafik und Auswertung erhalten.'),
-    active.length ? h('div', { class: 'activity-list' }, ...active.map(row)) : h('p', { class: 'empty-text' }, 'Alles ist archiviert.'),
-    done.length ? h('section', { class: 'sheet-section' }, h('h3', null, 'Archiviert'), h('div', { class: 'activity-list' }, ...done.map(row))) : null);
-}
-
 // A running period as a row (with its note); tapping it opens its details.
 function endablePeriod(m, colors) {
   return h('button', { type: 'button', class: 'period-row', 'aria-label': `${m.title}, seit ${formatShort(m.date)}. Tippen für Details.`, onclick: () => periodSheet(m.id) },
@@ -345,30 +360,11 @@ function periodSheet(id) {
     m.note ? h('section', { class: 'sheet-section' }, h('h3', null, 'Notiz'), h('p', { class: 'sheet-text period-note-full' }, m.note)) : null,
     h('div', { class: 'sheet-actions' },
       h('button', { type: 'button', class: 'btn ghost', onclick: () => editMomentSheet(m) }, 'Bearbeiten'),
-      ongoing ? armedButton('Heute beenden', 'Wirklich beenden? Nochmal tippen', () => {
+      ongoing ? armedButton(m.sick ? 'Wieder gesund' : 'Heute beenden', m.sick ? 'Heute beenden? Nochmal tippen' : 'Wirklich beenden? Nochmal tippen', () => {
         store.endMoment(m.id, today);
         closeSheet();
-        toast(`${m.title} beendet`);
-      }, 'btn danger') : null));
-}
-
-function toggleTodayOther(title) {
-  const key = title.trim().toLowerCase();
-  if (!key) return;
-  const existing = store.getState().moments.find(m => !m.span && !m.archived && m.date === form.date && m.title.toLowerCase() === key);
-  if (existing) store.deleteMoment(existing.id);
-  else store.addMoment({ date: form.date, title });
-}
-
-function addTodayOther() {
-  const input = $('#today-other-input');
-  const title = input.value.trim();
-  if (!title) { input.focus(); return; }
-  const key = title.toLowerCase();
-  // adding what is already there is a no-op, not a toggle
-  if (!store.getState().moments.some(m => !m.span && m.date === form.date && m.title.toLowerCase() === key)) store.addMoment({ date: form.date, title });
-  input.value = '';
-  toast(`${title} eingetragen`);
+        toast(m.sick ? 'Krankheit beendet. Schön, dass es dir besser geht.' : `${m.title} beendet`);
+      }, m.sick ? 'btn primary' : 'btn danger') : null));
 }
 
 function renderHeute() {
@@ -410,7 +406,7 @@ function renderHeute() {
   updateMoodUI();
   $('#btn-delete-entry').hidden = !existing;
   resetDeleteButton();
-  renderTodayOther();
+  renderDay();
 
   renderWeek();
 }
@@ -619,7 +615,6 @@ function initHeute() {
     form.note = e.target.value;
     form.dirty = true;
     updateSaveButton();
-    $('#tab-note-dot').hidden = !form.note.trim();
   });
 
   initFineSlider();
@@ -664,8 +659,8 @@ function initHeute() {
 let listDays = 7;
 
 function renderVerlauf() {
-  segmented($('#range-verlauf'), prefs.rangeVerlauf, id => { prefs.rangeVerlauf = id; savePrefs(); renderVerlauf(); });
-  const { from, to, days, all } = rangeBounds(prefs.rangeVerlauf);
+  segmented($('#range'), prefs.range, id => { prefs.range = id; savePrefs(); renderVerlauf(); });
+  const { from, to, days, all } = rangeBounds(prefs.range);
   const st = store.rangeStats(from, to);
 
   // stat tiles
@@ -684,14 +679,24 @@ function renderVerlauf() {
     stat('Einträge', String(st.count), possibleDays ? `von ${possibleDays * 3} möglichen` : 'bisher'),
   );
 
-  // chart (with the color band per time of day below the timeline)
-  moodLegend($('#mood-chart-legend'), { from, to });
-  $('#mood-band-legend').replaceChildren(
+  // one chart for everything; medications and activities can be shown as extra lanes
+  const state = store.getState();
+  const hasMeds = state.meds.length > 0;
+  const hasActs = state.moments.some(m => !m.sick);
+  const layer = (key, label) => h('button', {
+    type: 'button', class: `layer-chip${prefs.layers[key] ? ' on' : ''}`, 'aria-pressed': String(!!prefs.layers[key]),
+    onclick: () => { prefs.layers = { ...prefs.layers, [key]: !prefs.layers[key] }; savePrefs(); renderVerlauf(); },
+  }, h('span', { class: 'layer-check', 'aria-hidden': 'true' }), label);
+  $('#layers').replaceChildren(...[hasMeds && layer('meds', 'Medikamente'), hasActs && layer('moments', 'Aktivitäten')].filter(Boolean));
+  timelineLegend($('#timeline-legend'), { from, to });
+  $('#band-legend').replaceChildren(
     ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
     h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
-  moodChart($('#mood-chart'), { from, to });
+  timelineChart($('#timeline'), { from, to, meds: hasMeds && prefs.layers.meds, moments: hasActs && prefs.layers.moments });
 
-  // per slot
+  renderInsights(from, to);
+
+  // per time of day
   $('#slot-bars').replaceChildren(
     ...st.slots.map(sl => h('div', { class: 'hbar' },
       h('span', { class: 'hbar-label' }, sl.label),
@@ -701,6 +706,36 @@ function renderVerlauf() {
   );
 
   renderEntryList();
+}
+
+// "Was auffällt": medications/therapies and activities, mood on days with vs. without, biggest difference first.
+function renderInsights(from, to) {
+  const el = $('#insights');
+  const colors = store.momentColors();
+  const items = [];
+  for (const m of store.getState().meds) {
+    const c = store.medComparison(m, from, to);
+    if (c.with.days >= 5 && c.without.days >= 5) {
+      items.push({ name: m.name, c, open: () => medSheet(m.id), mark: h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }) });
+    }
+  }
+  for (const a of store.momentActivities()) {
+    const c = store.momentComparison(a.title, from, to);
+    if (c.with.days >= 3 && c.without.days >= 5) {
+      items.push({ name: a.title, c, open: () => activitySheet(a.title), mark: h('span', { class: 'key-dot', style: { background: momentCss(colors, a.title) } }) });
+    }
+  }
+  items.sort((a, b) => Math.abs(b.c.with.avg - b.c.without.avg) - Math.abs(a.c.with.avg - a.c.without.avg));
+  if (!items.length) {
+    el.replaceChildren(h('p', { class: 'empty-text' }, 'Sobald es im Zeitraum genug Tage mit und ohne ein Medikament oder eine Aktivität gibt, steht hier, was auffällt.'));
+    return;
+  }
+  el.replaceChildren(...items.slice(0, 8).map(it => h('button', { type: 'button', class: 'insight', onclick: it.open },
+    it.mark,
+    h('span', { class: 'insight-main' },
+      h('span', { class: 'insight-name' }, it.name),
+      h('span', { class: 'insight-sub' }, `Ø ${num1(it.c.with.avg)} mit · Ø ${num1(it.c.without.avg)} ohne · ${it.c.with.days} + ${it.c.without.days} Tage`)),
+    deltaEl(it.c.with.avg - it.c.without.avg))));
 }
 
 function renderEntryList() {
@@ -802,28 +837,14 @@ const maxDateFor = kind => (kind === 'therapy' ? addDays(todayKey(), 730) : toda
 function medCard(m) {
   const st = medStatus(m);
   const t = T(m);
-  // Change/stop need a running phase without a set end; anything else is changed via "Bearbeiten".
-  const open = store.openPhase(m);
-  const actions = [];
-  if (m.archived) {
-    actions.push(h('button', { type: 'button', class: 'btn small', onclick: () => { store.archiveMed(m.id, false); toast(`${m.name} aus dem Archiv geholt`); } }, 'Wiederherstellen'));
-  } else if (st.state === 'active' && open && open.start <= todayKey()) {
-    actions.push(h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m) }, t.change),
-      h('button', { type: 'button', class: 'btn small', onclick: () => stopSheet(m) }, t.stop));
-  } else if (st.state === 'stopped') {
-    actions.push(h('button', { type: 'button', class: 'btn small', onclick: () => doseSheet(m, true) }, t.restart));
-  }
-  actions.push(h('button', { type: 'button', class: 'btn small ghost', onclick: () => editSheet(m) }, 'Bearbeiten'));
   const chip = { active: [t.active, ' active'], planned: ['Geplant', ' planned'], stopped: [t.stopped, ''] }[st.state];
-  return h('article', { class: 'card med-card' },
-    h('div', { class: 'med-head' },
-      h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }),
-      h('h3', { class: 'med-name' }, m.name),
-      h('span', { class: `chip${chip[1]}` }, chip[0])),
-    h('div', { class: 'med-dose' }, h('strong', null, st.dose || t.noDose), h('span', null, st.text)),
-    st.upcoming ? h('p', { class: 'med-upcoming' }, st.upcoming) : null,
-    h('p', { class: 'med-history' }, medHistory(m)),
-    h('div', { class: 'med-actions' }, ...actions));
+  return h('button', { type: 'button', class: 'card med-row', onclick: () => medSheet(m.id) },
+    h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }),
+    h('span', { class: 'med-row-main' },
+      h('span', { class: 'med-row-name' }, m.name),
+      h('span', { class: 'med-row-sub' }, `${st.dose || t.noDose} · ${st.text}`),
+      st.upcoming ? h('span', { class: 'med-upcoming' }, st.upcoming) : null),
+    h('span', { class: `chip${chip[1]}` }, chip[0]));
 }
 
 // A folded "Archiv" section; whether it's open survives re-rendering.
@@ -838,142 +859,121 @@ function archiveSection(key, count, children) {
   return d;
 }
 
-let autoToggle = false; // set while the app itself opens/closes the list, so that isn't saved as a choice
 const KIND_FILTERS = [
-  { id: 'all', label: 'Alle', title: 'Deine Medikamente & Therapien' },
-  { id: 'med', label: 'Medikamente', title: 'Deine Medikamente' },
-  { id: 'therapy', label: 'Therapien', title: 'Deine Therapien' },
+  { id: 'all', label: 'Alle' },
+  { id: 'med', label: 'Medikamente' },
+  { id: 'therapy', label: 'Therapien' },
 ];
 const kindOf = m => (m.kind === 'therapy' ? 'therapy' : 'med');
-// Medications and therapies the "Anzeigen" switch lets through.
-const shownMeds = () => store.getState().meds.filter(m => prefs.kindFilter === 'all' || kindOf(m) === prefs.kindFilter);
 
 function renderMedis() {
-  // "Anderes" is its own area next to the switch, not part of "Alle".
-  const other = prefs.kindFilter === 'other';
-  $('#medis-main').hidden = other;
-  $('#other-main').hidden = !other;
-  $('#h-medis').textContent = other ? 'Anderes' : 'Medikamente & Therapien';
-  const toggle = $('#other-toggle');
-  toggle.setAttribute('aria-pressed', String(other));
-  toggle.classList.toggle('active', other);
-
-  const filter = KIND_FILTERS.find(f => f.id === prefs.kindFilter) ?? KIND_FILTERS[0];
-  $('#kind-filter').replaceChildren(...KIND_FILTERS.map(f => h('button', {
-    type: 'button', role: 'radio', 'aria-checked': String(!other && f.id === filter.id),
-    onclick: () => { prefs.kindFilter = f.id; prefs.lastKind = f.id; savePrefs(); renderMedis(); },
-  }, f.label)));
-  if (other) { renderOther(); return; }
-
-  const all = shownMeds();
-  const meds = all.filter(m => !m.archived);          // lists and counts: what's still in use
-  const archived = all.filter(m => m.archived);
-  const groups = ['med', 'therapy'].map(kind => ({ kind, items: meds.filter(m => kindOf(m) === kind) })).filter(g => g.items.length);
-  const archive = archiveSection('med', archived.length, byKind(archived).map(medCard));
-  $('#med-list').replaceChildren(...groups.flatMap(g => [
-    groups.length > 1 ? h('h3', { class: 'med-group' }, TERMS[g.kind].group) : null,
-    ...g.items.map(medCard),
-  ].filter(Boolean)), ...(archive ? [archive] : []));
-  if (!meds.length) {
-    const none = archived.length ? 'Alles ist archiviert.' : { all: 'Trag deine Medikamente und Therapien mit Startdatum ein. Danach siehst du unten, wie deine Stimmung dazu verlaufen ist.',
-      med: 'Noch keine Medikamente eingetragen.', therapy: 'Noch keine Therapien eingetragen.' }[filter.id];
-    $('#med-list').replaceChildren(h('p', { class: 'empty-text' }, none), ...(archive ? [archive] : []));
+  const meds = store.getState().meds;
+  // the filter only makes sense once there are both kinds
+  const both = meds.some(m => kindOf(m) === 'med') && meds.some(m => kindOf(m) === 'therapy');
+  const filter = both ? prefs.kindFilter : 'all';
+  $('#kind-filter').hidden = !both;
+  if (both) {
+    $('#kind-filter').replaceChildren(...KIND_FILTERS.map(f => h('button', {
+      type: 'button', role: 'radio', 'aria-checked': String(f.id === filter),
+      onclick: () => { prefs.kindFilter = f.id; savePrefs(); renderMedis(); },
+    }, f.label)));
   }
-
-  // Folded summary: title, count and what's running or planned.
-  $('#h-med-list').textContent = filter.title;
-  const states = meds.map(m => medStatus(m).state);
-  const count = n => states.filter(s => s === n).length;
-  const parts = [count('active') && `${count('active')} ${count('active') === 1 ? 'läuft' : 'laufen'}`,
-    count('planned') && `${count('planned')} geplant`, count('stopped') && `${count('stopped')} beendet`].filter(Boolean);
-  $('#med-summary-meta').textContent = meds.length ? `${meds.length} · ${parts.join(', ')}` : archived.length ? `${archived.length} im Archiv` : 'Noch nichts eingetragen';
-  const details = $('#med-details');
-  // Open by default only while the list is empty; afterwards remember the reader's choice.
-  const shouldOpen = prefs.medListOpen ?? store.getState().meds.length === 0;
-  if (details.open !== shouldOpen) { autoToggle = true; details.open = shouldOpen; }
-
-  segmented($('#range-medis'), prefs.rangeMedis, id => { prefs.rangeMedis = id; savePrefs(); renderMedis(); });
-  const { from, to } = rangeBounds(prefs.rangeMedis);
-  medLegend($('#med-chart-legend'), filter.id, { from, to });
-  medChart($('#med-chart'), { from, to, show: filter.id });
-  renderCompare(from, to);
-  renderEvents();
+  const shown = meds.filter(m => filter === 'all' || kindOf(m) === filter);
+  const active = shown.filter(m => !m.archived);
+  const archived = shown.filter(m => m.archived);
+  const groups = ['med', 'therapy'].map(kind => ({ kind, items: active.filter(m => kindOf(m) === kind) })).filter(g => g.items.length);
+  $('#med-list').replaceChildren(...(active.length
+    ? groups.flatMap(g => [groups.length > 1 ? h('h3', { class: 'med-group' }, TERMS[g.kind].group) : null, ...g.items.map(medCard)].filter(Boolean))
+    : [h('p', { class: 'empty-text card-empty' }, archived.length ? 'Alles ist archiviert.' : 'Trag deine Medikamente und Therapien mit Startdatum ein. Im Verlauf siehst du dann, wie deine Stimmung dazu verlaufen ist.')]));
+  const archive = archiveSection('med', archived.length, byKind(archived).map(medCard));
+  $('#med-archive').replaceChildren(...(archive ? [archive] : []));
 }
 
-function renderCompare(from, to) {
-  const meds = byKind(shownMeds());
-  const el = $('#compare');
-  if (!meds.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Hier ist noch nichts eingetragen.')); return; }
-  const MIN = 5;
-  el.replaceChildren(...meds.map(m => {
-    const t = T(m);
-    const c = store.medComparison(m, from, to);
-    const row = (label, data, cls) => h('div', { class: 'hbar' },
-      h('span', { class: 'hbar-label' }, label),
-      h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%`, background: cls === 'with' ? `var(--c${m.color + 1})` : null } }) : null),
-      h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
-    let hint = null;
-    if (c.with.days < MIN && c.without.days < MIN) hint = 'Zu wenige Tage mit Einträgen im Zeitraum.';
-    else if (c.without.days < MIN) hint = `${t.mostly}, deshalb gibt es kaum Vergleichstage. Wähle einen längeren Zeitraum.`;
-    else if (c.with.days < MIN) hint = t.rarely;
-    else {
-      const d = c.with.avg - c.without.avg;
-      hint = h('span', null, 'Unterschied ', deltaEl(d), ` ${t.withDays}.`);
-    }
-    return h('div', { class: 'compare-block' },
-      h('h3', null, h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }), m.name,
-        m.kind === 'therapy' ? h('span', { class: 'kind-tag' }, 'Therapie') : null),
-      h('div', { class: 'compare-rows' }, row('Mit', c.with, 'with'), row('Ohne', c.without, 'without')),
-      h('p', { class: 'compare-hint' }, hint));
-  }));
-}
+// Everything about one medication or therapy: state, history, mood with/without, each change, actions.
+function medSheet(id) {
+  const m = store.getMed(id);
+  if (!m) return;
+  const t = T(m);
+  const st = medStatus(m);
+  const today = todayKey();
+  const open = store.openPhase(m);
+  const chip = { active: [t.active, ' active'], planned: ['Geplant', ' planned'], stopped: [t.stopped, ''] }[st.state];
 
-function renderEvents() {
-  const el = $('#events');
-  const events = shownMeds().flatMap(m => store.medEvents(m)).filter(e => e.date <= todayKey())
-    .sort((a, b) => b.date.localeCompare(a.date));
-  if (!events.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Hier erscheint jeder Beginn, jede Änderung von Dosis oder Häufigkeit und jedes Ende mit dem Stimmungsvergleich davor und danach.')); return; }
-  el.replaceChildren(...events.slice(0, 20).map(ev => {
-    const c = store.eventComparison(ev.date);
+  // mood on days with vs. without, over all data
+  const c = store.medComparison(m, store.firstDataDate() ?? today, today);
+  const row = (label, data, cls) => h('div', { class: 'hbar' },
+    h('span', { class: 'hbar-label' }, label),
+    h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%`, background: cls === 'with' ? `var(--c${m.color + 1})` : null } }) : null),
+    h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
+  let hint;
+  if (c.with.days < 5 && c.without.days < 5) hint = 'Noch zu wenige Tage mit Stimmungseintrag.';
+  else if (c.without.days < 5) hint = 'Fast durchgehend, deshalb gibt es kaum Vergleichstage.';
+  else if (c.with.days < 5) hint = t.rarely;
+  else hint = h('span', null, 'Unterschied ', deltaEl(c.with.avg - c.without.avg), ` ${t.withDays}.`);
+
+  // each start, change and end: 4 weeks before vs. weeks 3–6 after
+  const events = store.medEvents(m).filter(e => e.date <= today).sort((a, b) => b.date.localeCompare(a.date));
+  const eventRow = ev => {
+    const ec = store.eventComparison(ev.date);
     let body;
-    if (!c.started) {
-      body = [`Vorher Ø ${num1(c.before.avg)}`, h('span', { class: 'vals' }, `Vergleich ab ${formatDayMonth(c.afterStart)} möglich`)];
-    } else if (c.before.avg == null || c.after.avg == null) {
-      body = [h('span', null, c.before.avg == null ? 'Keine Einträge in den 4 Wochen davor.' : 'Noch keine Einträge in Woche 3 bis 6.')];
-    } else {
-      body = [
-        h('span', { class: 'vals' }, `Ø ${num1(c.before.avg)} → ${c.complete ? '' : 'bisher '}Ø ${num1(c.after.avg)}`),
-        deltaEl(c.after.avg - c.before.avg),
-        h('span', { class: 'vals', style: { color: 'var(--muted)' } }, `${c.before.days} + ${c.after.days} Tage`),
-      ];
-    }
+    if (!ec.started) body = [`Vorher Ø ${num1(ec.before.avg)}`, h('span', { class: 'vals' }, ` · Vergleich ab ${formatDayMonth(ec.afterStart)} möglich`)];
+    else if (ec.before.avg == null || ec.after.avg == null) body = [ec.before.avg == null ? 'Keine Einträge in den 4 Wochen davor.' : 'Noch keine Einträge in Woche 3 bis 6.'];
+    else body = [h('span', { class: 'vals' }, `Ø ${num1(ec.before.avg)} → ${ec.complete ? '' : 'bisher '}Ø ${num1(ec.after.avg)}`), deltaEl(ec.after.avg - ec.before.avg)];
     return h('div', { class: 'event' },
       h('div', { class: 'event-date' }, formatShort(ev.date)),
-      h('div', null,
-        h('div', { class: 'event-title' }, h('span', { class: 'med-swatch', style: { background: `var(--c${ev.med.color + 1})` } }), eventText(ev)),
-        h('p', { class: 'event-body' }, ...body)));
-  }));
+      h('div', null, h('div', { class: 'event-title' }, eventText(ev)), h('p', { class: 'event-body' }, ...body)));
+  };
+
+  const actions = [];
+  if (!m.archived && st.state === 'active' && open && open.start <= today) {
+    actions.push(h('button', { type: 'button', class: 'btn', onclick: () => doseSheet(m) }, t.change),
+      h('button', { type: 'button', class: 'btn', onclick: () => stopSheet(m) }, t.stop));
+  } else if (!m.archived && st.state === 'stopped') {
+    actions.push(h('button', { type: 'button', class: 'btn', onclick: () => doseSheet(m, true) }, t.restart));
+  }
+
+  openSheet(m.name,
+    h('div', { class: 'med-sheet-head' },
+      h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }),
+      h('span', { class: 'med-dose' }, h('strong', null, st.dose || t.noDose), h('span', null, st.text)),
+      h('span', { class: `chip${chip[1]}` }, m.archived ? 'Archiviert' : chip[0])),
+    st.upcoming ? h('p', { class: 'med-upcoming' }, st.upcoming) : null,
+    actions.length ? h('div', { class: 'sheet-actions start' }, ...actions) : null,
+    h('section', { class: 'sheet-section' },
+      h('h3', null, 'Stimmung mit und ohne'),
+      h('div', { class: 'compare-rows' }, row('Mit', c.with, 'with'), row('Ohne', c.without, 'without')),
+      h('p', { class: 'compare-hint' }, hint)),
+    events.length ? h('section', { class: 'sheet-section' },
+      h('h3', null, 'Veränderungen'),
+      h('p', { class: 'sheet-text' }, '4 Wochen vorher im Vergleich zu Woche 3 bis 6 danach. Viele Medikamente wirken erst nach einigen Wochen.'),
+      h('div', { class: 'events' }, ...events.slice(0, 12).map(eventRow))) : null,
+    h('section', { class: 'sheet-section' }, h('h3', null, 'Verlauf'), h('p', { class: 'sheet-text' }, medHistory(m))),
+    h('div', { class: 'sheet-actions' },
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => {
+        store.archiveMed(m.id, !m.archived);
+        closeSheet();
+        toast(m.archived ? `${m.name} aus dem Archiv geholt` : `${m.name} archiviert`);
+      } }, m.archived ? 'Wiederherstellen' : 'Archivieren'),
+      h('button', { type: 'button', class: 'btn', onclick: () => editSheet(m) }, 'Bearbeiten')));
 }
 
-/* ================= ANDERES ================= */
+/* ================= ALLTAG ================= */
 
-let otherShown = 20;
-let otherSpan = false;   // form mode: false = one day, true = a period, 'sick' = a period of illness
-const MOMENT_MODES = [{ id: false, label: 'Ein Tag' }, { id: true, label: 'Zeitraum' }];
+const MOMENT_MODES = [{ id: false, label: 'Ein Tag' }, { id: true, label: 'Zeitspanne' }];
 // Fill in a name for an illness if none was typed.
 const withSickTitle = (title, mode) => (mode === 'sick' && !title.trim() ? 'Krank' : title);
 const momentEndMax = () => addDays(todayKey(), 365);   // a period may have a planned end (holiday until Friday)
 
-// Validation shared by the form and the edit sheet. Returns an error text or ''.
+// Validation shared by all activity forms. Returns an error text or ''.
 function momentError({ title, date, span, end }) {
-  if (!title.trim()) return 'Bitte beschreibe kurz, was du gemacht oder erlebt hast.';
+  if (!title.trim()) return 'Bitte gib der Aktivität einen Namen.';
   if (!date || date > todayKey()) return span ? 'Bitte wähle einen Beginn bis heute.' : 'Bitte wähle einen Tag bis heute.';
   if (span && end && end < date) return 'Das Ende kann nicht vor dem Beginn liegen.';
   if (span && end && end > momentEndMax()) return 'Das Ende darf höchstens ein Jahr in der Zukunft liegen.';
   return '';
 }
 
-// "12. Aug – 3. Sept", "seit 3.9.26", "ab 3.9.26 bis 20. Okt" …
+// "12. Aug – 3. Sept", "seit 3.9.26" …
 function momentDateLabel(m) {
   if (!m.span) return relativeDay(m.date);
   if (m.end == null) return `seit ${formatShort(m.date)}`;
@@ -981,50 +981,12 @@ function momentDateLabel(m) {
   return `${formatDayMonth(m.date)} – ${formatDayMonth(m.end)}`;
 }
 
-// Switch between "Ein Tag" and "Zeitraum" in a form: labels and the end field follow.
+// Switch between "Ein Tag" and "Zeitspanne" in the edit form.
 function momentModeSwitch(el, span, onChange) {
   el.replaceChildren(...MOMENT_MODES.map(mode => h('button', {
     type: 'button', role: 'radio', 'aria-checked': String(mode.id === span),
     onclick: () => { if (mode.id !== span) onChange(mode.id); },
   }, mode.label)));
-}
-
-function applyOtherMode() {
-  momentModeSwitch($('#other-mode'), otherSpan, span => { otherSpan = span; applyOtherMode(); });
-  $('#other-date-label').textContent = otherSpan ? 'Von' : 'Tag';
-  $('#other-end-field').hidden = !otherSpan;
-  const end = $('#other-end');
-  end.min = $('#other-date').value || '';
-  end.max = momentEndMax();
-}
-
-function renderOther() {
-  const today = todayKey();
-  const dateInput = $('#other-date');
-  dateInput.max = today;
-  if (!dateInput.value || dateInput.value > today) dateInput.value = today;
-  applyOtherMode();
-
-  // Quick buttons: what you've entered before, most frequent first.
-  // Picking one also picks "Zeitraum" when it was last entered as a period.
-  const titles = store.momentTitles();
-  const colors = store.momentColors();
-  const title = $('#other-title');
-  const lastOf = key => [...store.getState().moments].reverse().find(m => m.title.toLowerCase() === key);
-  $('#other-quick').replaceChildren(...titles.slice(0, 8).map(tt => h('button', {
-    type: 'button', class: `quick-chip${title.value.trim().toLowerCase() === tt.title.toLowerCase() ? ' on' : ''}`,
-    onclick: () => { title.value = tt.title; const last = lastOf(tt.title.toLowerCase()); otherSpan = !!last?.span; renderOther(); $('#other-note').focus(); },
-  }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
-  $('#other-quick').hidden = !titles.length;
-  $('#other-manage').hidden = !store.getState().moments.length;
-
-  renderSickCard();
-  segmented($('#range-other'), prefs.rangeOther, id => { prefs.rangeOther = id; savePrefs(); renderOther(); });
-  const { from, to } = rangeBounds(prefs.rangeOther);
-  momentsLegend($('#other-chart-legend'), { from, to });
-  momentsChart($('#other-chart'), { from, to });
-  renderOtherEffect(from, to, store.momentTitles(true));
-  renderOtherList();
 }
 
 const momentCss = (colors, title) => `var(--c${(colors.get(title.toLowerCase()) ?? 0) + 1})`;
@@ -1038,53 +1000,115 @@ const hbarRow = (label, data, cls, color) => h('div', { class: 'hbar' },
   h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%`, ...(color ? { background: color } : {}) } }) : null),
   h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
 
-function renderOtherEffect(from, to, titles) {
-  const el = $('#other-effect');
+function renderAlltag() {
   const moments = store.getState().moments;
-  if (!moments.some(m => !m.sick)) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Trag ein, was du gemacht oder erlebt hast. Hier siehst du dann, wie deine Stimmung an diesen Tagen war.')); return; }
-  const blocks = [];
   const colors = store.momentColors();
-  const count = m => titles.find(x => x.title.toLowerCase() === m.title.toLowerCase())?.n ?? 0;
-  // Recurring things (entered at least twice): days with vs. without, within the range.
-  for (const tt of titles.filter(x => x.n >= 2)) {
-    const c = store.momentComparison(tt.title, from, to);
-    if (!c.with.days && !c.without.days) continue;
-    let hint;
-    if (c.with.days < 3) hint = 'Zu wenige Tage mit Stimmungseintrag im Zeitraum.';
-    else if (c.without.days < 3) hint = 'Kaum Vergleichstage ohne diesen Eintrag im Zeitraum.';
-    else hint = h('span', null, 'Unterschied ', deltaEl(c.with.avg - c.without.avg), ' an Tagen damit.');
-    blocks.push(h('div', { class: 'compare-block' },
-      h('h3', null, h('span', { class: 'med-swatch moment', style: { background: momentCss(colors, tt.title) } }), tt.title, h('span', { class: 'kind-tag' }, `${tt.n}×`)),
-      h('div', { class: 'compare-rows' }, hbarRow('Mit', c.with, 'with moment', momentCss(colors, tt.title)), hbarRow('Ohne', c.without, 'without')),
-      h('p', { class: 'compare-hint' }, hint)));
-  }
-  // Single periods: 4 weeks before, during, and up to 4 weeks after (like a medication).
-  for (const m of store.momentsIn(from, to).filter(m => m.span && !m.sick && count(m) < 2).sort((a, b) => b.date.localeCompare(a.date))) {
-    const e = store.spanEffect(m);
-    const rows = [hbarRow('Davor', e.before, 'without'), hbarRow(e.ended ? 'Während' : 'Bisher', e.during, 'with moment', momentCss(colors, m.title))];
-    if (e.ended) rows.push(hbarRow('Danach', e.after, 'without'));
-    let hint;
-    if (e.before.days < 3) hint = 'Zu wenige Einträge in den 4 Wochen davor für einen Vergleich.';
-    else if (e.during.days < 3) hint = 'Noch zu wenige Tage mit Stimmungseintrag in diesem Zeitraum.';
-    else hint = h('span', null, e.ended ? 'Währenddessen ' : 'Bisher ', deltaEl(e.during.avg - e.before.avg), ' im Vergleich zu den 4 Wochen davor.');
-    blocks.push(h('div', { class: 'compare-block' },
-      h('h3', null, m.sick ? h('span', { class: 'med-swatch moment span key-sick' }) : h('span', { class: 'med-swatch moment span', style: { background: momentCss(colors, m.title) } }), m.title, h('span', { class: 'kind-tag' }, momentDateLabel(m))),
-      h('div', { class: 'compare-rows' }, ...rows),
-      h('p', { class: 'compare-hint' }, hint)));
-  }
-  // Single days in the range: the day against the week before and after.
-  for (const m of moments.filter(m => !m.span && m.date >= from && m.date <= to && count(m) < 2).sort((a, b) => b.date.localeCompare(a.date))) {
-    const w = store.momentWindow(m.date);
-    const body = w.day == null
-      ? [h('span', null, 'Kein Stimmungseintrag an diesem Tag.')]
-      : [h('span', { class: 'vals' }, [w.before.avg != null ? `Woche davor Ø ${num1(w.before.avg)}` : null, `an dem Tag Ø ${num1(w.day)}`, w.after.avg != null ? `Woche danach Ø ${num1(w.after.avg)}` : null].filter(Boolean).join(' · ')),
-        w.before.avg != null && w.after.avg != null ? deltaEl(w.after.avg - w.before.avg) : null];
-    blocks.push(h('div', { class: 'event' },
-      h('div', { class: 'event-date' }, formatShort(m.date)),
-      h('div', null, h('div', { class: 'event-title' }, h('span', { class: 'med-swatch moment', style: { background: momentCss(colors, m.title) } }), m.title),
-        h('p', { class: 'event-body' }, ...body.filter(Boolean)))));
-  }
-  el.replaceChildren(...(blocks.length ? blocks : [h('p', { class: 'empty-text' }, 'Im gewählten Zeitraum gibt es noch nichts auszuwerten.')]));
+
+  // periods running now (incl. illness)
+  const running = moments.filter(m => m.span && !m.archived && store.momentRunning(m)).sort((a, b) => Number(!!b.sick) - Number(!!a.sick) || a.date.localeCompare(b.date));
+  $('#alltag-running-card').hidden = !running.length;
+  $('#alltag-running').replaceChildren(...running.map(m => endablePeriod(m, colors)));
+
+  // activities: one row per name
+  const acts = store.momentActivities();
+  const row = a => {
+    const key = a.title.toLowerCase();
+    const list = moments.filter(m => !m.sick && m.title.toLowerCase() === key);
+    const span = list.some(m => m.span);
+    const run = list.find(m => m.span && !m.archived && store.momentRunning(m));
+    return h('button', { type: 'button', class: 'activity-row', onclick: () => activitySheet(a.title) },
+      h('span', { class: span ? 'key-bar' : 'key-dot', style: { background: momentCss(colors, a.title) } }),
+      h('span', { class: 'activity-main' },
+        h('span', { class: 'activity-name' }, a.title),
+        h('small', null, run ? `läuft seit ${formatShort(run.date)}` : span && a.n === 1 ? `Zeitspanne · ${momentDateLabel(list[0])}` : `${a.n}× · zuletzt ${relativeDay(a.last)}`)),
+      s('svg', { viewBox: '0 0 24 24', class: 'chevron-right', 'aria-hidden': 'true' }, s('path', { d: 'M9 6l6 6-6 6', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })));
+  };
+  const active = acts.filter(a => !a.archived), archived = acts.filter(a => a.archived);
+  $('#activity-list').replaceChildren(...(active.length ? active.map(row)
+    : [h('p', { class: 'empty-text' }, archived.length ? 'Alles ist archiviert.' : 'Noch keine Aktivitäten. Tippe sie auf „Heute“ an oder lege unten eine Zeitspanne an.')]));
+  const archive = archiveSection('acts', archived.length, archived.map(row));
+  $('#activity-archive').replaceChildren(...(archive ? [archive] : []));
+
+  renderSickStatus();
+}
+
+// Everything about one activity: mood with/without, all its entries, add for a day, archive.
+function activitySheet(title) {
+  const key = title.toLowerCase();
+  const today = todayKey();
+  const colors = store.momentColors();
+  const color = momentCss(colors, title);
+  const list = store.getState().moments.filter(m => !m.sick && m.title.toLowerCase() === key)
+    .sort((a, b) => store.momentLast(b).localeCompare(store.momentLast(a)));
+  if (!list.length) { closeSheet(); return; }
+  const archived = list.every(m => m.archived);
+  const c = store.momentComparison(title, store.firstDataDate() ?? today, today);
+  let hint;
+  if (c.with.days < 3) hint = 'Noch zu wenige Tage mit Stimmungseintrag.';
+  else if (c.without.days < 3) hint = 'Kaum Vergleichstage ohne.';
+  else hint = h('span', null, 'Unterschied ', deltaEl(c.with.avg - c.without.avg), ' an Tagen damit.');
+
+  const date = h('input', { id: 'act-date', type: 'date', value: today, max: today, required: true });
+  const entryRow = m => {
+    const mood = momentMood(m);
+    return h('button', { type: 'button', class: 'other-row', onclick: () => editMomentSheet(m) },
+      h('span', { class: 'other-date' }, momentDateLabel(m)),
+      h('span', { class: 'other-main' },
+        h('span', { class: 'other-title' }, m.span ? 'Zeitspanne' : 'Tag', !m.archived && store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
+        m.note ? h('span', { class: 'other-note' }, m.note) : null),
+      mood != null ? h('span', { class: 'other-mood', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
+  };
+
+  openSheet(title,
+    h('section', { class: 'compare-block' },
+      h('div', { class: 'compare-rows' }, hbarRow('Mit', c.with, 'with moment', color), hbarRow('Ohne', c.without, 'without')),
+      h('p', { class: 'compare-hint' }, hint)),
+    h('form', { class: 'sheet-section act-add', onsubmit: e => {
+      e.preventDefault();
+      if (!date.value || date.value > today) return;
+      if (list.some(m => !m.span && !m.archived && m.date === date.value)) { toast('An diesem Tag schon eingetragen'); return; }
+      store.addMoment({ date: date.value, title });
+      toast(`${title} am ${formatDayMonth(date.value)} eingetragen`);
+      activitySheet(title);
+    } },
+    h('h3', null, 'Für einen Tag nachtragen'),
+    h('div', { class: 'day-add' }, date, h('button', { type: 'submit', class: 'btn' }, 'Eintragen'))),
+    h('section', { class: 'sheet-section' },
+      h('h3', null, `Einträge · ${list.length}`),
+      h('div', { class: 'other-list' }, ...list.slice(0, 60).map(entryRow))),
+    h('div', { class: 'sheet-actions' },
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => {
+        store.archiveActivity(title, !archived);
+        closeSheet();
+        toast(archived ? `${title} aus dem Archiv geholt` : `${title} archiviert`);
+      } }, archived ? 'Wiederherstellen' : 'Archivieren')));
+}
+
+// A period such as a holiday or a course: name, from, to (empty = still going), note.
+function newSpanSheet() {
+  const today = todayKey();
+  const names = store.momentActivities().filter(a => !a.archived).map(a => a.title);
+  const title = h('input', { id: 'span-title', type: 'text', maxlength: 80, placeholder: 'z. B. Urlaub, Yogakurs, neuer Job', list: 'span-names', required: true, autocomplete: 'off' });
+  const from = h('input', { id: 'span-from', type: 'date', value: today, max: today, required: true });
+  const to = h('input', { id: 'span-to', type: 'date', min: today, max: momentEndMax() });
+  const note = h('input', { id: 'span-note', type: 'text', maxlength: 500, autocomplete: 'off' });
+  from.addEventListener('change', () => { to.min = from.value; });
+  const err = h('p', { class: 'form-error', hidden: true });
+  openSheet('Zeitspanne anlegen', h('form', { class: 'sheet-body', onsubmit: e => {
+    e.preventDefault();
+    const values = { title: title.value, date: from.value, end: to.value || null, note: note.value, span: true };
+    const msg = momentError(values);
+    if (msg) { err.textContent = msg; err.hidden = false; return; }
+    store.addMoment(values);
+    closeSheet();
+    toast(`${values.title.trim()} angelegt`);
+  } },
+  h('p', { class: 'sheet-text' }, 'Für etwas über mehrere Tage, z. B. einen Urlaub oder einen Kurs. Ohne Ende läuft die Zeitspanne weiter, bis du sie beendest.'),
+  field('Name', title),
+  h('datalist', { id: 'span-names' }, ...names.map(n => h('option', { value: n }))),
+  h('div', { class: 'field-row' }, field('Von', from), field('Bis (leer = läuft noch)', to)),
+  field('Notiz (optional)', note), err,
+  h('div', { class: 'sheet-actions' }, h('button', { type: 'submit', class: 'btn primary' }, 'Anlegen'))));
 }
 
 // Mood shown next to an entry: the day's average, or the average over a period so far.
@@ -1093,32 +1117,6 @@ function momentMood(m) {
   if (m.date > todayKey()) return null;
   const last = store.momentLast(m) < todayKey() ? store.momentLast(m) : todayKey();
   return store.windowAverage(m.date, last).avg;
-}
-
-function renderOtherList() {
-  // Running periods first, then everything by (end) date, newest first.
-  const sortKey = m => store.momentLast(m);
-  const colors = store.momentColors();
-  const sorted = [...store.getState().moments].sort((a, b) =>
-    Number(store.momentRunning(b)) - Number(store.momentRunning(a)) || sortKey(b).localeCompare(sortKey(a)) || b.updatedAt.localeCompare(a.updatedAt));
-  const moments = sorted.filter(m => !m.archived && !m.sick);   // illness has its own area
-  const archived = sorted.filter(m => m.archived && !m.sick);
-  const row = m => {
-    const mood = momentMood(m);
-    return h('button', { type: 'button', class: `other-row${m.span ? ' span' : ''}`, onclick: () => editMomentSheet(m) },
-      h('span', { class: 'other-date' }, momentDateLabel(m)),
-      h('span', { class: 'other-main' },
-        h('span', { class: 'other-title' }, momentMark(colors, m), m.title, !m.archived && store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
-        m.note ? h('span', { class: 'other-note' }, m.note) : null),
-      mood != null ? h('span', { class: 'other-mood', title: m.span ? 'Ø Stimmung in diesem Zeitraum' : 'Ø Stimmung an diesem Tag', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
-  };
-  const el = $('#other-list');
-  el.replaceChildren(...(moments.length
-    ? moments.slice(0, otherShown).map(row)
-    : [h('p', { class: 'empty-text' }, archived.length ? 'Alles ist archiviert.' : 'Noch nichts eingetragen.')]));
-  $('#btn-more-other').hidden = moments.length <= otherShown;
-  const archive = archiveSection('other', archived.length, archived.map(row));
-  $('#other-archive').replaceChildren(...(archive ? [archive] : []));
 }
 
 function editMomentSheet(m, span = m.sick ? 'sick' : !!m.span) {
@@ -1341,7 +1339,7 @@ function settingsSheet() {
     h('dl', { class: 'info-list' },
       h('dt', null, 'Einträge'), h('dd', null, String(st.entries.length)),
       h('dt', null, 'Medikamente & Therapien'), h('dd', null, String(st.meds.length)),
-      h('dt', null, 'Anderes'), h('dd', null, String(st.moments.length)),
+      h('dt', null, 'Aktivitäten'), h('dd', null, String(st.moments.length)),
       h('dt', null, 'Letzte Sicherung'), h('dd', null, last ? formatShort(last.slice(0, 10)) : 'noch nie')),
 
     remindersSection(),
@@ -1421,51 +1419,15 @@ function confirmImport(text) {
 
 $('#btn-settings').addEventListener('click', settingsSheet);
 $('#btn-add-med').addEventListener('click', () => addMedSheet(prefs.kindFilter === 'therapy' ? 'therapy' : 'med'));
-$('#other-toggle').addEventListener('click', () => {
-  prefs.kindFilter = prefs.kindFilter === 'other' ? (prefs.lastKind || 'all') : 'other';
-  savePrefs();
-  renderMedis();
-});
-$('#other-form').addEventListener('submit', e => {
-  e.preventDefault();
-  const title = $('#other-title'), date = $('#other-date'), end = $('#other-end'), note = $('#other-note'), err = $('#other-error');
-  err.hidden = true;
-  const entry = { date: date.value, title: withSickTitle(title.value, otherSpan), note: note.value, span: !!otherSpan, sick: otherSpan === 'sick', end: otherSpan ? end.value || null : null };
-  const msg = momentError(entry);
-  if (msg) { err.textContent = msg; err.hidden = false; return; }
-  title.value = ''; note.value = ''; end.value = '';
-  store.addMoment(entry);
-  toast(`${entry.title.trim()} eingetragen`);
-});
-$('#other-title').addEventListener('input', () => {
-  const v = $('#other-title').value.trim().toLowerCase();
-  document.querySelectorAll('#other-quick .quick-chip').forEach(b => b.classList.toggle('on', b.firstChild.textContent.toLowerCase() === v));
-});
-$('#other-date').addEventListener('change', () => { $('#other-end').min = $('#other-date').value; });
-// "Einträge" is open by default, "Notiz" folded. A tap opens one, another tap on it closes it.
-function showEntryTab(tab) {
-  for (const name of ['other', 'note']) {
-    const open = tab === name;
-    $(`#tab-${name}`).setAttribute('aria-expanded', String(open));
-    $(`#tab-${name}`).classList.toggle('open', open);
-    $(`#panel-${name}`).hidden = !open;
-  }
-}
-let entryTab = 'other';   // "Einträge" starts open, "Notiz" folded
-for (const name of ['other', 'note']) {
-  $(`#tab-${name}`).addEventListener('click', () => { entryTab = entryTab === name ? null : name; showEntryTab(entryTab); });
-}
-showEntryTab(entryTab);
-$('#today-other-add').addEventListener('click', addTodayOther);
-$('#today-other-manage').addEventListener('click', activitiesSheet);
-$('#other-manage').addEventListener('click', activitiesSheet);
+$('#btn-new-span').addEventListener('click', newSpanSheet);
 $('#btn-sick').addEventListener('click', sickSheet);
-$('#today-other-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTodayOther(); } });
-$('#btn-more-other').addEventListener('click', () => { otherShown += 30; renderOtherList(); });
-$('#med-details').addEventListener('toggle', e => {
-  if (autoToggle) { autoToggle = false; return; }
-  if (prefs.medListOpen !== e.target.open) { prefs.medListOpen = e.target.open; savePrefs(); }
+$('#btn-im-sick').addEventListener('click', () => {
+  store.addMoment({ date: todayKey(), title: 'Krank', span: true, sick: true });
+  toast('Krank seit heute eingetragen. Gute Besserung!');
 });
+$('#btn-note').addEventListener('click', () => showNote(true));
+$('#day-add-btn').addEventListener('click', addDayActivity);
+$('#day-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addDayActivity(); } });
 $('#btn-more-entries').addEventListener('click', () => { listDays += 14; renderEntryList(); });
 
 /* ---------------- reminders ---------------- */
