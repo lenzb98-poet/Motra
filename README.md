@@ -6,7 +6,7 @@ Die Daten liegen zuerst im Browser auf deinem Gerät (`localStorage`). Optional 
 
 ## Funktionen
 
-Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf** zum Verstehen, **Medikamente** und **Alltag** zum Verwalten. Details öffnen sich in einem Fenster, wenn du etwas antippst.
+Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf** zum Verstehen, **Therapien** und **Alltag** zum Verwalten. Details öffnen sich in einem Fenster, wenn du etwas antippst.
 
 - **Heute**
   - Stimmung auf einer 5er-Skala für Morgen, Mittag oder Abend; vergangene Tage über das Datum nachtragen. Gesicht gedrückt halten und zur Seite ziehen öffnet den Feinregler für Zwischenwerte wie 3,6.
@@ -18,7 +18,7 @@ Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf**
   - Eine Grafik: Stimmungskurve, darunter die Zeitleiste und ein Farbstreifen für Morgen, Mittag und Abend. Medikamente und Aktivitäten lassen sich als beschriftete Zeilen einblenden. Krankheitstage liegen rot gestreift im Hintergrund.
   - „Was auffällt“: Medikamente und Aktivitäten mit dem größten Unterschied der Stimmung an Tagen mit und ohne.
   - Durchschnitt nach Tageszeit und alle Stimmungen als Liste.
-- **Medikamente**
+- **Therapien**
   - Medikamente mit Dosis und Therapien mit Häufigkeit (Therapien auch im Voraus geplant). Ein Tipp öffnet die Details: Dosis ändern, absetzen oder wieder aufnehmen, Stimmung mit und ohne, jede Veränderung im Vergleich 4 Wochen vorher zu Woche 3 bis 6 danach, Bearbeiten und Archivieren.
 - **Alltag**
   - Was gerade läuft, alle Aktivitäten mit Details (Stimmung mit und ohne, alle Einträge, für einen Tag nachtragen, archivieren) und „Zeitspanne anlegen“ für Urlaub, Kurse und Ähnliches.
