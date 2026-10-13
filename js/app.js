@@ -106,12 +106,26 @@ const sheet = $('#sheet');
 function openSheet(title, ...content) {
   $('#sheet-title').textContent = title;
   $('#sheet-body').replaceChildren(h('div', { class: 'sheet-body' }, ...content));
-  if (!sheet.open) sheet.showModal();
+  if (!sheet.open) { lockScroll(); sheet.showModal(); }
   sheet.scrollTop = 0;
   // Start focus on the title, so the close button doesn't light up on open.
   $('#sheet-title').focus({ preventScroll: true });
 }
 const closeSheet = () => sheet.open && sheet.close();
+// While a sheet is open the page behind it must not scroll (iOS ignores overflow:hidden, so pin the body).
+let lockedY = null;
+function lockScroll() {
+  if (lockedY != null) return;
+  lockedY = window.scrollY;
+  Object.assign(document.body.style, { position: 'fixed', top: `-${lockedY}px`, left: '0', right: '0', width: '100%' });
+}
+function unlockScroll() {
+  if (lockedY == null) return;
+  Object.assign(document.body.style, { position: '', top: '', left: '', right: '', width: '' });
+  window.scrollTo(0, lockedY);
+  lockedY = null;
+}
+sheet.addEventListener('close', unlockScroll);
 $('#sheet-close').addEventListener('click', closeSheet);
 sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
 

@@ -744,6 +744,7 @@ textarea:focus, .field input:focus, .today-other-add input:focus { outline: none
 /* ---------------- sheet ---------------- */
 
 .sheet {
+  overscroll-behavior: contain;
   width: 100%;
   max-width: 560px;
   max-height: 92dvh;
