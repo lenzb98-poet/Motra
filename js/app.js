@@ -221,6 +221,61 @@ function renderTodayOther() {
   $('#today-other-manage').hidden = !moments.length;
 }
 
+/* ---------- Krank: its own area ---------- */
+
+const sickRunning = () => store.illnesses().find(m => !m.archived && store.momentRunning(m) && (m.end == null || m.end > todayKey()));
+
+function renderSickCard() {
+  const cur = sickRunning();
+  const all = store.illnesses();
+  $('#sick-status').textContent = cur
+    ? `${cur.title} seit ${formatShort(cur.date)}`
+    : all.length ? `Zuletzt: ${all[0].title}, ${momentDateLabel(all[0])}` : 'Krankheitstage eintragen';
+  $('#btn-sick').classList.toggle('active', !!cur);
+}
+
+function sickSheet() {
+  const today = todayKey();
+  const cur = sickRunning();
+  const past = store.illnesses().filter(m => m !== cur);
+  const title = h('input', { id: 'sick-title', type: 'text', maxlength: 80, placeholder: 'z. B. Grippe, Erkältung (leer = „Krank“)', autocomplete: 'off' });
+  const from = h('input', { id: 'sick-from', type: 'date', value: today, max: today, required: true });
+  const to = h('input', { id: 'sick-to', type: 'date', min: today, max: momentEndMax() });
+  const note = h('input', { id: 'sick-note', type: 'text', maxlength: 500, placeholder: 'z. B. Fieber, Antibiotikum', autocomplete: 'off' });
+  from.addEventListener('change', () => { to.min = from.value; });
+  const err = h('p', { class: 'form-error', hidden: true });
+  const row = m => h('button', { type: 'button', class: 'period-row', onclick: () => editMomentSheet(m) },
+    h('span', { class: 'key-bar key-sick' }),
+    h('span', { class: 'period-main' },
+      h('span', { class: 'period-title' }, m.title),
+      h('small', null, `${momentDateLabel(m)} · ${store.spanEffect(m).days} ${store.spanEffect(m).days === 1 ? 'Tag' : 'Tage'}`),
+      m.note ? h('span', { class: 'period-note' }, m.note) : null));
+
+  openSheet('Krank',
+    h('p', { class: 'sheet-text' }, 'Krankheitstage liegen in allen Grafiken als rot gestreiftes Feld. So siehst du, wann ein Tief mit einer Krankheit zusammenfällt.'),
+    cur ? h('section', { class: 'sick-now' },
+      h('p', { class: 'sick-now-title' }, h('span', { class: 'key-bar key-sick' }), `${cur.title} seit ${formatShort(cur.date)}`),
+      cur.note ? h('p', { class: 'sheet-text' }, cur.note) : null,
+      h('div', { class: 'sheet-actions' },
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => editMomentSheet(cur) }, 'Bearbeiten'),
+        armedButton('Wieder gesund', 'Heute beenden? Nochmal tippen', () => { store.endMoment(cur.id, today); closeSheet(); toast('Krankheit beendet. Schön, dass es dir besser geht.'); }, 'btn primary'))) : null,
+    h('form', { class: 'sheet-section sheet-body', onsubmit: e => {
+      e.preventDefault();
+      const values = { title: withSickTitle(title.value, 'sick'), date: from.value, end: to.value || null, note: note.value, span: true, sick: true };
+      const msg = momentError(values);
+      if (msg) { err.textContent = msg; err.hidden = false; return; }
+      store.addMoment(values);
+      closeSheet();
+      toast(`${values.title} eingetragen`);
+    } },
+    h('h3', null, cur ? 'Weitere Krankheit eintragen' : 'Krankheit eintragen'),
+    field('Name (optional)', title),
+    h('div', { class: 'field-row' }, field('Von', from), field('Bis (leer = noch krank)', to)),
+    field('Notiz', note), err,
+    h('div', { class: 'sheet-actions' }, h('button', { type: 'submit', class: 'btn primary' }, 'Eintragen'))),
+    past.length ? h('section', { class: 'sheet-section' }, h('h3', null, 'Frühere'), h('div', { class: 'period-list' }, ...past.map(row))) : null);
+}
+
 /* Whole activities (all entries with one title): archive them out of the quick choices, or bring them back. */
 function activitiesSheet() {
   const acts = store.momentActivities();
@@ -890,7 +945,7 @@ function renderEvents() {
 
 let otherShown = 20;
 let otherSpan = false;   // form mode: false = one day, true = a period, 'sick' = a period of illness
-const MOMENT_MODES = [{ id: false, label: 'Ein Tag' }, { id: true, label: 'Zeitraum' }, { id: 'sick', label: 'Krank' }];
+const MOMENT_MODES = [{ id: false, label: 'Ein Tag' }, { id: true, label: 'Zeitraum' }];
 // Fill in a name for an illness if none was typed.
 const withSickTitle = (title, mode) => (mode === 'sick' && !title.trim() ? 'Krank' : title);
 const momentEndMax = () => addDays(todayKey(), 365);   // a period may have a planned end (holiday until Friday)
@@ -924,8 +979,6 @@ function applyOtherMode() {
   momentModeSwitch($('#other-mode'), otherSpan, span => { otherSpan = span; applyOtherMode(); });
   $('#other-date-label').textContent = otherSpan ? 'Von' : 'Tag';
   $('#other-end-field').hidden = !otherSpan;
-  $('#other-title').placeholder = otherSpan === 'sick' ? 'z. B. Grippe, Erkältung (leer = „Krank“)' : 'z. B. Morgenroutine, Spaziergang, gutes Gespräch';
-  $('#other-title').required = otherSpan !== 'sick';
   const end = $('#other-end');
   end.min = $('#other-date').value || '';
   end.max = momentEndMax();
@@ -946,11 +999,12 @@ function renderOther() {
   const lastOf = key => [...store.getState().moments].reverse().find(m => m.title.toLowerCase() === key);
   $('#other-quick').replaceChildren(...titles.slice(0, 8).map(tt => h('button', {
     type: 'button', class: `quick-chip${title.value.trim().toLowerCase() === tt.title.toLowerCase() ? ' on' : ''}`,
-    onclick: () => { title.value = tt.title; const last = lastOf(tt.title.toLowerCase()); otherSpan = last?.sick ? 'sick' : !!last?.span; renderOther(); $('#other-note').focus(); },
+    onclick: () => { title.value = tt.title; const last = lastOf(tt.title.toLowerCase()); otherSpan = !!last?.span; renderOther(); $('#other-note').focus(); },
   }, h('span', { class: 'key-dot', style: { background: momentCss(colors, tt.title) } }), tt.title, tt.n > 1 ? h('small', null, `${tt.n}×`) : null)));
   $('#other-quick').hidden = !titles.length;
   $('#other-manage').hidden = !store.getState().moments.length;
 
+  renderSickCard();
   segmented($('#range-other'), prefs.rangeOther, id => { prefs.rangeOther = id; savePrefs(); renderOther(); });
   const { from, to } = rangeBounds(prefs.rangeOther);
   momentsLegend($('#other-chart-legend'), { from, to });
@@ -973,7 +1027,7 @@ const hbarRow = (label, data, cls, color) => h('div', { class: 'hbar' },
 function renderOtherEffect(from, to, titles) {
   const el = $('#other-effect');
   const moments = store.getState().moments;
-  if (!moments.length) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Trag ein, was du gemacht oder erlebt hast. Hier siehst du dann, wie deine Stimmung an diesen Tagen war.')); return; }
+  if (!moments.some(m => !m.sick)) { el.replaceChildren(h('p', { class: 'empty-text' }, 'Trag ein, was du gemacht oder erlebt hast. Hier siehst du dann, wie deine Stimmung an diesen Tagen war.')); return; }
   const blocks = [];
   const colors = store.momentColors();
   const count = m => titles.find(x => x.title.toLowerCase() === m.title.toLowerCase())?.n ?? 0;
@@ -991,7 +1045,7 @@ function renderOtherEffect(from, to, titles) {
       h('p', { class: 'compare-hint' }, hint)));
   }
   // Single periods: 4 weeks before, during, and up to 4 weeks after (like a medication).
-  for (const m of store.momentsIn(from, to).filter(m => m.span && count(m) < 2).sort((a, b) => b.date.localeCompare(a.date))) {
+  for (const m of store.momentsIn(from, to).filter(m => m.span && !m.sick && count(m) < 2).sort((a, b) => b.date.localeCompare(a.date))) {
     const e = store.spanEffect(m);
     const rows = [hbarRow('Davor', e.before, 'without'), hbarRow(e.ended ? 'Während' : 'Bisher', e.during, 'with moment', momentCss(colors, m.title))];
     if (e.ended) rows.push(hbarRow('Danach', e.after, 'without'));
@@ -1033,8 +1087,8 @@ function renderOtherList() {
   const colors = store.momentColors();
   const sorted = [...store.getState().moments].sort((a, b) =>
     Number(store.momentRunning(b)) - Number(store.momentRunning(a)) || sortKey(b).localeCompare(sortKey(a)) || b.updatedAt.localeCompare(a.updatedAt));
-  const moments = sorted.filter(m => !m.archived);
-  const archived = sorted.filter(m => m.archived);
+  const moments = sorted.filter(m => !m.archived && !m.sick);   // illness has its own area
+  const archived = sorted.filter(m => m.archived && !m.sick);
   const row = m => {
     const mood = momentMood(m);
     return h('button', { type: 'button', class: `other-row${m.span ? ' span' : ''}`, onclick: () => editMomentSheet(m) },
@@ -1062,10 +1116,10 @@ function editMomentSheet(m, span = m.sick ? 'sick' : !!m.span) {
   const err = h('p', { class: 'form-error', hidden: true });
   // Switching keeps what was typed.
   const modeSwitch = h('div', { class: 'segmented kind-switch', role: 'radiogroup', 'aria-label': 'Dauer' });
-  momentModeSwitch(modeSwitch, span, next => editMomentSheet({ ...m, title: title.value, date: date.value, note: note.value, span: !!next, sick: next === 'sick', end: end.value || null }, next));
   if (span === 'sick') { title.required = false; title.placeholder = 'z. B. Grippe (leer = „Krank“)'; }
+  else momentModeSwitch(modeSwitch, span, next => editMomentSheet({ ...m, title: title.value, date: date.value, note: note.value, span: !!next, end: end.value || null }, next));
   const running = span && m.id && store.momentRunning(store.getState().moments.find(x => x.id === m.id) ?? {});
-  openSheet('Eintrag bearbeiten', h('form', { class: 'sheet-body', onsubmit: e => {
+  openSheet(span === 'sick' ? 'Krankheit bearbeiten' : 'Eintrag bearbeiten', h('form', { class: 'sheet-body', onsubmit: e => {
     e.preventDefault();
     const values = { title: withSickTitle(title.value, span), date: date.value, note: note.value, span: !!span, sick: span === 'sick', end: span ? end.value || null : null };
     const msg = momentError(values);
@@ -1074,8 +1128,8 @@ function editMomentSheet(m, span = m.sick ? 'sick' : !!m.span) {
     closeSheet();
     toast('Änderung gespeichert');
   } },
-  modeSwitch,
-  field('Eintrag', title),
+  span === 'sick' ? null : modeSwitch,
+  field(span === 'sick' ? 'Name (optional)' : 'Eintrag', title),
   span ? h('div', { class: 'field-row' }, field('Von', date), field('Bis (leer = läuft noch)', end)) : field('Tag', date),
   field('Notiz', note), err,
   running ? h('button', { type: 'button', class: 'btn', onclick: () => { store.endMoment(m.id, todayKey()); closeSheet(); toast(`${m.title} heute beendet`); } }, 'Heute beenden') : null,
@@ -1391,6 +1445,7 @@ showEntryTab(entryTab);
 $('#today-other-add').addEventListener('click', addTodayOther);
 $('#today-other-manage').addEventListener('click', activitiesSheet);
 $('#other-manage').addEventListener('click', activitiesSheet);
+$('#btn-sick').addEventListener('click', sickSheet);
 $('#today-other-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTodayOther(); } });
 $('#btn-more-other').addEventListener('click', () => { otherShown += 30; renderOtherList(); });
 $('#med-details').addEventListener('toggle', e => {

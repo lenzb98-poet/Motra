@@ -1050,3 +1050,18 @@ a.btn { text-decoration: none; }
   content: ''; position: absolute; left: 10%; right: 10%; bottom: -3px; height: 4px; border-radius: 2px;
   background: repeating-linear-gradient(45deg, rgba(229, 99, 107, .9) 0 2px, rgba(229, 99, 107, .2) 2px 5px);
 }
+
+/* Krank: entry card in "Anderes" and its sheet */
+.sick-card {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; padding: 16px 18px; text-align: left; color: inherit;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.sick-card:hover { border-color: var(--ink-4); }
+.sick-card.active { border-color: rgba(229, 99, 107, .45); }
+.sick-card-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sick-card .chevron-right { width: 20px; height: 20px; color: var(--text-2); flex: none; }
+.key-sick.big { width: 28px; height: 28px; border-radius: 8px; }
+.sick-now { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid rgba(229, 99, 107, .45); background: rgba(229, 99, 107, .06); }
+.sick-now-title { display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 600; }
+.sick-now .sheet-actions { margin-top: 2px; }

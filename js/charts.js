@@ -482,7 +482,8 @@ export function medLegend(el, show = 'all', { from, to } = {}) {
 /* ---------------- mood + other things ("Anderes") ---------------- */
 
 export function momentsChart(container, { from, to }) {
-  const moments = store.momentsIn(from, to);
+  // illness is not a lane: it only shows as the red striped field in the plot
+  const moments = store.momentsIn(from, to).filter(m => !m.sick);
   const colors = store.momentColors();
   const colorOf = m => (m.sick ? 'var(--bad)' : `var(--c${(colors.get(m.title.toLowerCase()) ?? 0) + 1})`);
   const total = diffDays(from, to) + 1;
@@ -604,6 +605,7 @@ export function momentsLegend(el, { from, to }) {
   const colors = store.momentColors();
   const seen = new Map();
   for (const m of store.momentsIn(from, to)) {
+    if (m.sick) continue;
     const k = m.title.toLowerCase();
     const cur = seen.get(k) ?? { title: m.title, span: false, sick: false, first: m.date };
     if (m.span) cur.span = true;
@@ -616,6 +618,7 @@ export function momentsLegend(el, { from, to }) {
     h('span', { class: 'legend-item' }, keyLine('trend'), '7-Tage-Schnitt'),
     h('span', { class: 'legend-item' }, h('span', { class: 'key-dot neutral' }), 'Tagesdurchschnitt'),
     ...titles.map(([k, v]) => h('span', { class: 'legend-item' },
-      v.sick ? h('span', { class: 'key-sick' }) : h('span', { class: v.span ? 'key-bar' : 'key-dot', style: { background: `var(--c${(colors.get(k) ?? 0) + 1})` } }), v.sick ? `${v.title} (krank)` : v.title)),
+      h('span', { class: v.span ? 'key-bar' : 'key-dot', style: { background: `var(--c${(colors.get(k) ?? 0) + 1})` } }), v.title)),
+    ...(sickLegend(from, to) ? [sickLegend(from, to)] : []),
   );
 }

@@ -262,6 +262,8 @@ export const momentRunning = m => !!m.span && m.date <= todayKey() && (m.end == 
 export const sickIn = (from, to) => state.moments
   .filter(m => m.sick && m.date <= to && momentLast(m) >= from && m.date <= todayKey())
   .map(m => ({ m, from: m.date < from ? from : m.date, to: minKey(minKey(momentLast(m), to), todayKey()) }));
+// All illnesses, newest first.
+export const illnesses = () => state.moments.filter(m => m.sick).sort((a, b) => b.date.localeCompare(a.date));
 export const sickOn = date => state.moments.find(m => m.sick && momentCovers(m, date)) ?? null;
 // Moments that touch the range from–to.
 export const momentsIn = (from, to) => state.moments.filter(m => m.date <= to && momentLast(m) >= from);
@@ -278,6 +280,7 @@ export function deleteMoment(id) {
 export function momentColors() {
   const first = new Map();
   for (const m of state.moments) {
+    if (m.sick) continue;   // illness has its own area and its own red stripes
     const k = m.title.toLowerCase();
     if (!first.has(k) || m.date < first.get(k)) first.set(k, m.date);
   }
@@ -289,7 +292,7 @@ export function momentColors() {
 export function momentTitles(includeArchived = false) {
   const counts = new Map();
   for (const m of state.moments) {
-    if (m.archived && !includeArchived) continue;
+    if (m.sick || (m.archived && !includeArchived)) continue;
     const key = m.title.toLowerCase();
     const cur = counts.get(key) ?? { title: m.title, n: 0, last: '' };
     cur.n++;
@@ -303,6 +306,7 @@ export function momentTitles(includeArchived = false) {
 export function momentActivities() {
   const map = new Map();
   for (const m of state.moments) {
+    if (m.sick) continue;
     const key = m.title.toLowerCase();
     const cur = map.get(key) ?? { title: m.title, n: 0, active: 0, last: '' };
     cur.n++;

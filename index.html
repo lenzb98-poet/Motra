@@ -209,6 +209,15 @@
 
         <!-- "Anderes": routines and moments that made a difference, kept apart from treatment -->
         <div class="view-part" id="other-main" hidden>
+          <!-- Illness has its own area, opened with this button -->
+          <button type="button" class="card sick-card" id="btn-sick">
+            <span class="key-sick big" aria-hidden="true"></span>
+            <span class="sick-card-text">
+              <span class="h2">Krank</span>
+              <span class="card-meta" id="sick-status"></span>
+            </span>
+            <svg class="chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
           <form class="card other-form" id="other-form" autocomplete="off">
             <h2 class="h2">Was hast du gemacht oder erlebt?</h2>
             <div class="other-quick" id="other-quick"></div>
