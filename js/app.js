@@ -130,7 +130,47 @@ function unlockScroll() {
   window.scrollTo(0, lockedY);
   lockedY = null;
 }
-sheet.addEventListener('close', unlockScroll);
+sheet.addEventListener('close', () => { unlockScroll(); sheet.style.transform = ''; sheet.style.transition = ''; });
+
+// Swipe down to close: from the grip or title at any time, from the content when it is scrolled to the top.
+let sheetDrag = null;
+sheet.addEventListener('touchstart', e => {
+  if (e.touches.length !== 1) return;
+  const fromHead = !!e.target.closest('.sheet-grip, .sheet-head');
+  if (!fromHead && (sheet.scrollTop > 0 || e.target.closest('textarea, .fine-track'))) return;
+  sheetDrag = { y0: e.touches[0].clientY, t0: performance.now(), dy: 0, active: false, fromHead };
+}, { passive: true });
+sheet.addEventListener('touchmove', e => {
+  if (!sheetDrag) return;
+  const dy = e.touches[0].clientY - sheetDrag.y0;
+  if (!sheetDrag.active) {
+    if (dy < -4) { sheetDrag = null; return; }          // scrolling up: leave it to the content
+    if (dy < 8) return;
+    if (!sheetDrag.fromHead && sheet.scrollTop > 0) { sheetDrag = null; return; }
+    sheetDrag.active = true;
+    sheetDrag.t0 = performance.now();
+    sheetDrag.y0 = e.touches[0].clientY;
+  }
+  e.preventDefault();
+  sheetDrag.dy = Math.max(0, e.touches[0].clientY - sheetDrag.y0);
+  sheet.style.transition = 'none';
+  sheet.style.transform = `translateY(${sheetDrag.dy}px)`;
+}, { passive: false });
+function endSheetDrag() {
+  const d = sheetDrag;
+  sheetDrag = null;
+  if (!d?.active) return;
+  const speed = d.dy / Math.max(1, performance.now() - d.t0);   // px per ms
+  sheet.style.transition = 'transform .2s ease';
+  if (d.dy > 110 || (d.dy > 40 && speed > 0.5)) {
+    sheet.style.transform = 'translateY(110%)';
+    setTimeout(closeSheet, 180);
+  } else {
+    sheet.style.transform = '';
+  }
+}
+sheet.addEventListener('touchend', endSheetDrag);
+sheet.addEventListener('touchcancel', endSheetDrag);
 $('#sheet-close').addEventListener('click', closeSheet);
 sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
 
