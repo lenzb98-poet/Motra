@@ -21,7 +21,7 @@ Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf**
 - **Therapien**
   - Medikamente mit Dosis und Therapien mit Häufigkeit (Therapien auch im Voraus geplant). Ein Tipp öffnet die Details: Dosis ändern, absetzen oder wieder aufnehmen, Stimmung mit und ohne, jede Veränderung im Vergleich 4 Wochen vorher zu Woche 3 bis 6 danach, Bearbeiten und Archivieren.
 - **Alltag**
-  - Was gerade läuft, alle Aktivitäten mit Details (Stimmung mit und ohne, alle Einträge, für einen Tag nachtragen, nach einer beendeten Zeitspanne eine neue starten, archivieren) und „Zeitspanne anlegen“ für Urlaub, Kurse und Ähnliches.
+  - Was gerade läuft, alle Aktivitäten mit Details (Stimmung mit und ohne, bei Zeitspannen die 4 Wochen davor, währenddessen und die 4 Wochen danach, alle Einträge, für einen Tag nachtragen, nach einer beendeten Zeitspanne eine neue starten, archivieren) und „Zeitspanne anlegen“ für Urlaub, Kurse und Ähnliches.
   - „Krank“: laufende Krankheit beenden, frühere ansehen und nachtragen.
 - **Archiv:** Medikamente, Therapien und Aktivitäten lassen sich archivieren statt löschen. Sie verschwinden aus den Listen, bleiben aber in Grafik und Auswertung.
 - **Daten:** Sicherung als JSON herunterladen und wiederherstellen, CSV-Tabelle für den Arzttermin, Beispieldaten zum Ausprobieren.

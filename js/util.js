@@ -50,7 +50,8 @@ export const relativeDay = key => {
 
 // Numbers in German notation, one decimal.
 export const num1 = v => (v == null || Number.isNaN(v) ? '–' : v.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
-export const signed1 = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + num1(Math.abs(v));
+// sign of the rounded value, so a tiny difference reads ±0,0 and not −0,0
+export const signed1 = v => { const r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '±') + num1(Math.abs(r)); };
 
 export const mean = arr => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
 

@@ -1124,10 +1124,28 @@ function activitySheet(title) {
       mood != null ? h('span', { class: 'other-mood', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
   };
 
+  // Periods: 4 weeks before, during (so far) and up to 4 weeks after, for each period (newest first).
+  const spanBlock = m => {
+    const e = store.spanEffect(m);
+    const rows = [hbarRow('Davor', e.before, 'without'), hbarRow(e.ended ? 'Während' : 'Bisher', e.during, 'with moment', color)];
+    if (e.ended) rows.push(hbarRow('Danach', e.after, 'without'));
+    let note;
+    if (!e.started) note = `Beginnt am ${formatDayMonth(m.date)}.`;
+    else if (e.before.days < 3) note = 'Zu wenige Einträge in den 4 Wochen davor für einen Vergleich.';
+    else if (e.during.days < 3) note = 'Noch zu wenige Tage mit Stimmungseintrag in dieser Zeit.';
+    else note = h('span', null, e.ended ? 'Währenddessen ' : 'Bisher ', deltaEl(e.during.avg - e.before.avg), ' im Vergleich zu den 4 Wochen davor.');
+    return h('section', { class: 'compare-block' },
+      h('h3', null, h('span', { class: 'med-swatch moment span', style: { background: color } }), momentDateLabel(m), store.momentRunning(m) && !m.archived ? h('span', { class: 'chip running' }, 'läuft') : null),
+      h('div', { class: 'compare-rows' }, ...rows),
+      h('p', { class: 'compare-hint' }, note));
+  };
+  const hasDays = list.some(m => !m.span);
+
   openSheet(title,
-    h('section', { class: 'compare-block' },
+    ...list.filter(m => m.span).slice(0, 3).map(spanBlock),
+    hasDays ? h('section', { class: 'compare-block' },
       h('div', { class: 'compare-rows' }, hbarRow('Mit', c.with, 'with moment', color), hbarRow('Ohne', c.without, 'without')),
-      h('p', { class: 'compare-hint' }, hint)),
+      h('p', { class: 'compare-hint' }, hint)) : null,
     runningSpan ? h('p', { class: 'sheet-text act-running' }, h('span', { class: 'chip running' }, 'läuft'), ` seit ${formatShort(runningSpan.date)}. Beenden kannst du sie unter „Läuft gerade“ oder in der Liste unten.`) : null,
     restart,
     onlySpans ? null : h('form', { class: 'sheet-section act-add', onsubmit: e => {
