@@ -1089,6 +1089,31 @@ function activitySheet(title) {
   else hint = h('span', null, 'Unterschied ', deltaEl(c.with.avg - c.without.avg), ' an Tagen damit.');
 
   const date = h('input', { id: 'act-date', type: 'date', value: today, max: today, required: true });
+  // Periods: once the last one has ended, a new one can be started right here.
+  const spans = list.filter(m => m.span);
+  const runningSpan = spans.find(m => !m.archived && store.momentRunning(m));
+  const onlySpans = spans.length === list.length;
+  const restart = spans.length && !runningSpan ? (() => {
+    const from = h('input', { id: 'act-span-from', type: 'date', value: today, max: today, required: true });
+    const to = h('input', { id: 'act-span-to', type: 'date', min: today, max: momentEndMax() });
+    const note = h('input', { id: 'act-span-note', type: 'text', maxlength: 500, autocomplete: 'off', placeholder: 'optional' });
+    from.addEventListener('change', () => { to.min = from.value; });
+    const err = h('p', { class: 'form-error', hidden: true });
+    return h('form', { class: 'sheet-section', onsubmit: e => {
+      e.preventDefault();
+      const values = { title, date: from.value, end: to.value || null, note: note.value, span: true };
+      const msg = momentError(values);
+      if (msg) { err.textContent = msg; err.hidden = false; return; }
+      store.addMoment(values);
+      toast(`${title}: neue Zeitspanne ab ${formatDayMonth(from.value)}`);
+      activitySheet(title);
+    } },
+    h('h3', null, 'Neue Zeitspanne starten'),
+    h('p', { class: 'sheet-text' }, `Die letzte ging ${momentDateLabel(spans[0])}.`),
+    h('div', { class: 'field-row' }, field('Von', from), field('Bis (leer = läuft noch)', to)),
+    field('Notiz', note), err,
+    h('div', { class: 'sheet-actions start' }, h('button', { type: 'submit', class: 'btn primary' }, 'Starten')));
+  })() : null;
   const entryRow = m => {
     const mood = momentMood(m);
     return h('button', { type: 'button', class: 'other-row', onclick: () => editMomentSheet(m) },
@@ -1103,7 +1128,9 @@ function activitySheet(title) {
     h('section', { class: 'compare-block' },
       h('div', { class: 'compare-rows' }, hbarRow('Mit', c.with, 'with moment', color), hbarRow('Ohne', c.without, 'without')),
       h('p', { class: 'compare-hint' }, hint)),
-    h('form', { class: 'sheet-section act-add', onsubmit: e => {
+    runningSpan ? h('p', { class: 'sheet-text act-running' }, h('span', { class: 'chip running' }, 'läuft'), ` seit ${formatShort(runningSpan.date)}. Beenden kannst du sie unter „Läuft gerade“ oder in der Liste unten.`) : null,
+    restart,
+    onlySpans ? null : h('form', { class: 'sheet-section act-add', onsubmit: e => {
       e.preventDefault();
       if (!date.value || date.value > today) return;
       if (list.some(m => !m.span && !m.archived && m.date === date.value)) { toast('An diesem Tag schon eingetragen'); return; }
