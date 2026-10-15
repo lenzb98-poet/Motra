@@ -116,6 +116,10 @@
           <div class="segmented" role="radiogroup" aria-label="Ansicht" id="range"></div>
         </div>
 
+        <div class="zoom-info" id="zoom-info" hidden>
+          <span>Ausschnitt: <strong id="zoom-label"></strong></span>
+          <button type="button" class="link-btn" id="zoom-reset">Zurücksetzen</button>
+        </div>
         <div class="stats" id="stats"></div>
 
         <section class="card chart-card" aria-labelledby="h-timeline">
@@ -125,7 +129,7 @@
           </div>
           <div class="legend" id="timeline-legend"></div>
           <div class="chart" id="timeline"></div>
-          <p class="chart-note">Farbstreifen ganz unten: oben Morgen, in der Mitte Mittag, unten Abend.</p>
+          <p class="chart-note">Farbstreifen ganz unten: oben Morgen, in der Mitte Mittag, unten Abend. Mit zwei Fingern zoomen und verschieben, doppelt tippen setzt zurück.</p>
           <div class="mood-scale-legend" id="band-legend"></div>
         </section>
 

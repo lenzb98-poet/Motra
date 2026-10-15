@@ -697,10 +697,14 @@ function initHeute() {
 /* ================= VERLAUF ================= */
 
 let listDays = 7;
+// A range picked by zooming the chart (two fingers / trackpad). While set, the whole page follows it.
+let zoom = null;
 
 function renderVerlauf() {
-  segmented($('#range'), prefs.range, id => { prefs.range = id; savePrefs(); renderVerlauf(); });
-  const { from, to, days, all } = rangeBounds(prefs.range);
+  segmented($('#range'), zoom ? null : prefs.range, id => { zoom = null; prefs.range = id; savePrefs(); renderVerlauf(); });
+  const { from, to, days, all } = zoom ? { ...zoom, days: diffDays(zoom.from, zoom.to) + 1, all: false } : rangeBounds(prefs.range);
+  $('#zoom-info').hidden = !zoom;
+  if (zoom) $('#zoom-label').textContent = `${formatDayMonth(from)} – ${formatDayMonth(to)}${fromKey(from).getFullYear() !== fromKey(to).getFullYear() || fromKey(to).getFullYear() !== fromKey(todayKey()).getFullYear() ? ` ${fromKey(to).getFullYear()}` : ''} · ${days} Tage`;
   const st = store.rangeStats(from, to);
 
   // stat tiles
@@ -732,7 +736,12 @@ function renderVerlauf() {
   $('#band-legend').replaceChildren(
     ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
     h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
-  timelineChart($('#timeline'), { from, to, meds: hasMeds && prefs.layers.meds, moments: hasActs && prefs.layers.moments });
+  const allRange = rangeBounds('all');
+  timelineChart($('#timeline'), {
+    from, to, meds: hasMeds && prefs.layers.meds, moments: hasActs && prefs.layers.moments,
+    bounds: { min: allRange.from < from ? allRange.from : from, max: todayKey() },
+    onZoom: r => { zoom = r; renderVerlauf(); },
+  });
 
   renderInsights(from, to);
 
@@ -1507,6 +1516,7 @@ function confirmImport(text) {
 $('#btn-settings').addEventListener('click', settingsSheet);
 $('#btn-add-med').addEventListener('click', () => addMedSheet(prefs.kindFilter === 'therapy' ? 'therapy' : 'med'));
 $('#btn-new-span').addEventListener('click', newSpanSheet);
+$('#zoom-reset').addEventListener('click', () => { zoom = null; renderVerlauf(); });
 $('#btn-sick').addEventListener('click', sickSheet);
 $('#btn-im-sick').addEventListener('click', () => {
   store.addMoment({ date: todayKey(), title: 'Krank', span: true, sick: true });

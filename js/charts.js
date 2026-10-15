@@ -134,8 +134,9 @@ function attachHover(svg, { from, to, left, width, top, bottom, x, describe, lab
     const idx = Math.max(0, Math.min(total - 1, Math.floor(((px - left) / width) * total)));
     return addDays(from, idx);
   };
-  hit.addEventListener('pointermove', e => show(dateAt(e.clientX), e.clientX, e.clientY));
-  hit.addEventListener('pointerdown', e => show(dateAt(e.clientX), e.clientX, e.clientY));
+  // no info while two fingers zoom the chart
+  hit.addEventListener('pointermove', e => { if (!svg.dataset.zooming) show(dateAt(e.clientX), e.clientX, e.clientY); });
+  hit.addEventListener('pointerdown', e => { if (!svg.dataset.zooming) show(dateAt(e.clientX), e.clientX, e.clientY); });
   hit.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hide(); });
   // Touch: the info shows while the finger is on the chart and goes away when it is lifted.
   for (const type of ['pointerup', 'pointercancel']) hit.addEventListener(type, e => { if (e.pointerType !== 'mouse') hide(); });
@@ -215,7 +216,7 @@ function emptyState(container, text) {
 
 const kindOf = m => (m.kind === 'therapy' ? 'therapy' : 'med');
 
-export function timelineChart(container, { from, to, meds: withMeds = true, moments: withMoments = false }) {
+export function timelineChart(container, { from, to, meds: withMeds = true, moments: withMoments = false, onZoom = null, bounds = null }) {
   const width = Math.max(280, container.clientWidth);
   const total = diffDays(from, to) + 1;
   const stats = store.rangeStats(from, to);
@@ -421,6 +422,95 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
   });
 
   container.replaceChildren(svg);
+  if (onZoom && bounds) attachZoom(svg, { from, to, left, width: plotW, onZoom, bounds });
+}
+
+/* Two-finger zoom and pan (and pinch on a trackpad). While the fingers move, the drawing is only
+   stretched and shifted (smooth); when they lift, the chosen range is handed to onZoom, which redraws
+   the whole page for it. A double tap resets. */
+const MIN_DAYS = 5;
+function attachZoom(svg, { from, to, left, width, onZoom, bounds }) {
+  const N0 = diffDays(from, to) + 1;
+  const maxDays = diffDays(bounds.min, bounds.max) + 1;
+  let g = null;           // running gesture
+  let lastTap = 0;
+
+  // range for a zoom factor around an anchor day, with the anchor ending up at fraction f of the width
+  const rangeFor = (anchorDay, f, days) => {
+    days = Math.max(MIN_DAYS, Math.min(maxDays, Math.round(days)));
+    let start = Math.round(anchorDay - f * days);
+    const minStart = diffDays(from, bounds.min), maxStart = diffDays(from, bounds.max) - days + 1;
+    start = Math.max(minStart, Math.min(maxStart, start));
+    const a = addDays(from, start);
+    return { from: a, to: addDays(a, days - 1), days, start };
+  };
+  const frac = (clientX, box) => Math.max(0, Math.min(1, (clientX - box.left - left * box.width / svg.viewBox.baseVal.width) / (width * box.width / svg.viewBox.baseVal.width)));
+  const preview = r => {
+    // stretch/shift the current drawing so the new range fills the plot width
+    const s = N0 / r.days;
+    const tx = left - left * s - (r.start / N0) * width * s;
+    svg.style.transformOrigin = '0 0';
+    svg.style.transform = `translateX(${tx}px) scaleX(${s})`;
+  };
+  const finish = r => {
+    svg.style.transform = '';
+    if (r && (r.from !== from || r.to !== to)) onZoom({ from: r.from, to: r.to });
+  };
+  const hideTip = () => { const tip = tooltip(); if (tip) tip.hidden = true; svg.querySelector('.crosshair')?.setAttribute('visibility', 'hidden'); };
+
+  svg.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      hideTip();
+      const box = svg.getBoundingClientRect();
+      const [p, q] = e.touches;
+      const d0 = Math.max(10, Math.abs(p.clientX - q.clientX));
+      const f0 = frac((p.clientX + q.clientX) / 2, box);
+      g = { box, d0, anchor: f0 * N0, r: null };
+      svg.dataset.zooming = '1';
+    } else if (e.touches.length === 1 && g == null) {
+      const now = performance.now();
+      if (now - lastTap < 300) { lastTap = 0; e.preventDefault(); onZoom(null); return; }
+      lastTap = now;
+    }
+  }, { passive: false });
+  svg.addEventListener('touchmove', e => {
+    if (!g || e.touches.length < 2) return;
+    e.preventDefault();
+    const [p, q] = e.touches;
+    const d = Math.max(10, Math.abs(p.clientX - q.clientX));
+    const f = frac((p.clientX + q.clientX) / 2, g.box);
+    g.r = rangeFor(g.anchor, f, N0 * g.d0 / d);
+    preview(g.r);
+  }, { passive: false });
+  const end = e => {
+    if (!g || e.touches.length >= 2) return;
+    const r = g.r;
+    g = null;
+    lastTap = 0;
+    delete svg.dataset.zooming;
+    hideTip();
+    finish(r);
+  };
+  svg.addEventListener('touchend', end);
+  svg.addEventListener('touchcancel', end);
+
+  // trackpad pinch (browsers report it as wheel + ctrlKey) and ctrl + mouse wheel
+  let wheelTimer = null, wheelR = null, wheelDays = N0, wheelAnchor = null;
+  svg.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    hideTip();
+    const box = svg.getBoundingClientRect();
+    const f = frac(e.clientX, box);
+    if (wheelAnchor == null) wheelAnchor = f * N0;
+    wheelDays = wheelDays * Math.exp(e.deltaY * 0.01);
+    wheelR = rangeFor(wheelAnchor, f, wheelDays);
+    preview(wheelR);
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => { const r = wheelR; wheelR = null; wheelAnchor = null; finish(r); }, 220);
+  }, { passive: false });
+  svg.addEventListener('dblclick', () => onZoom(null));
 }
 
 export function timelineLegend(el, { from, to }) {

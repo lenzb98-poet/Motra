@@ -1089,3 +1089,15 @@ a.btn { text-decoration: none; }
 .card-actions { margin-top: 12px; }
 #alltag-running-card[hidden] { display: none; }
 .act-add .day-add input { min-height: 44px; }
+
+/* zooming the timeline */
+#timeline { overflow: hidden; }
+#timeline .chart-svg { touch-action: pan-y; will-change: transform; }
+.zoom-info {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border-radius: var(--radius);
+  background: var(--ink-1); border: 1px solid var(--ink-3);
+  font-size: 13.5px; color: var(--text-2);
+}
+.zoom-info strong { color: var(--text); font-weight: 600; }
+.zoom-info[hidden] { display: none; }
