@@ -258,13 +258,13 @@ export function endMoment(id, end) {
 export const momentLast = m => (!m.span ? m.date : m.end ?? maxKey(m.date, todayKey()));
 export const momentCovers = (m, d) => d >= m.date && d <= momentLast(m);
 export const momentRunning = m => !!m.span && m.date <= todayKey() && (m.end == null || m.end >= todayKey());
-// Periods of illness that touch the range, clipped to it (archived ones too: the history stays).
+// Periods of illness that touch the range, clipped to it (archived ones are left out).
 export const sickIn = (from, to) => state.moments
-  .filter(m => m.sick && m.date <= to && momentLast(m) >= from && m.date <= todayKey())
+  .filter(m => m.sick && !m.archived && m.date <= to && momentLast(m) >= from && m.date <= todayKey())
   .map(m => ({ m, from: m.date < from ? from : m.date, to: minKey(minKey(momentLast(m), to), todayKey()) }));
 // All illnesses, newest first.
 export const illnesses = () => state.moments.filter(m => m.sick).sort((a, b) => b.date.localeCompare(a.date));
-export const sickOn = date => state.moments.find(m => m.sick && momentCovers(m, date)) ?? null;
+export const sickOn = date => state.moments.find(m => m.sick && !m.archived && momentCovers(m, date)) ?? null;
 // Moments that touch the range from–to.
 export const momentsIn = (from, to) => state.moments.filter(m => m.date <= to && momentLast(m) >= from);
 

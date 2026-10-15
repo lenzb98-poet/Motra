@@ -754,12 +754,14 @@ function renderInsights(from, to) {
   const colors = store.momentColors();
   const items = [];
   for (const m of store.getState().meds) {
+    if (m.archived) continue;   // archived: out of the chart and out of this list
     const c = store.medComparison(m, from, to);
     if (c.with.days >= 5 && c.without.days >= 5) {
       items.push({ name: m.name, c, open: () => medSheet(m.id), mark: h('span', { class: 'med-swatch', style: { background: `var(--c${m.color + 1})` } }) });
     }
   }
   for (const a of store.momentActivities()) {
+    if (a.archived) continue;
     const c = store.momentComparison(a.title, from, to);
     if (c.with.days >= 3 && c.without.days >= 5) {
       items.push({ name: a.title, c, open: () => activitySheet(a.title), mark: h('span', { class: 'key-dot', style: { background: momentCss(colors, a.title) } }) });

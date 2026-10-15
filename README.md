@@ -23,7 +23,7 @@ Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf**
 - **Alltag**
   - Was gerade läuft, alle Aktivitäten mit Details (Stimmung mit und ohne, bei Zeitspannen die 4 Wochen davor, währenddessen und die 4 Wochen danach, alle Einträge, für einen Tag nachtragen, nach einer beendeten Zeitspanne eine neue starten, archivieren) und „Zeitspanne anlegen“ für Urlaub, Kurse und Ähnliches.
   - „Krank“: laufende Krankheit beenden, frühere ansehen und nachtragen.
-- **Archiv:** Medikamente, Therapien und Aktivitäten lassen sich archivieren statt löschen. Sie verschwinden aus den Listen, bleiben aber in Grafik und Auswertung.
+- **Archiv:** Medikamente, Therapien und Aktivitäten lassen sich archivieren statt löschen. Sie verschwinden aus den Listen, aus der Grafik im Verlauf und aus „Was auffällt“. Die Daten bleiben erhalten; wiederhergestellt ist alles wieder da.
 - **Daten:** Sicherung als JSON herunterladen und wiederherstellen, CSV-Tabelle für den Arzttermin, Beispieldaten zum Ausprobieren.
 - **Synchronisierung (optional):** In den Einstellungen mit E-Mail, Passwort und Code aus einer Authenticator-App anmelden. Danach gleicht Motra beim Öffnen, nach jedem Speichern und alle zwei Minuten ab.
 - **Erinnerungen:** Mitteilungen zu frei wählbaren Zeiten für Morgen, Mittag und Abend, auch wenn die App geschlossen ist. Ist eine Tageszeit schon eingetragen, entfällt die Erinnerung. Auf iPhone/iPad muss Motra auf dem Home-Bildschirm liegen.

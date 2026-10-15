@@ -221,11 +221,12 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
   const stats = store.rangeStats(from, to);
 
   // which lanes to draw
+  // archived things stay out of the chart (their data is kept and comes back when restored)
   const medLanes = !withMeds ? [] : [...store.getState().meds]
-    .filter(m => m.phases.some(p => p.start <= to && (p.end == null || p.end >= from)))
+    .filter(m => !m.archived && m.phases.some(p => p.start <= to && (p.end == null || p.end >= from)))
     .sort((a, b) => (kindOf(a) === 'therapy') - (kindOf(b) === 'therapy'));
   const colors = store.momentColors();
-  const momentList = withMoments ? store.momentsIn(from, to).filter(m => !m.sick) : [];
+  const momentList = withMoments ? store.momentsIn(from, to).filter(m => !m.sick && !m.archived) : [];
   const groups = new Map();
   for (const m of momentList) {
     const key = m.title.toLowerCase();
