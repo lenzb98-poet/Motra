@@ -110,7 +110,7 @@ function safeAreaTop() {
 }
 
 // Crosshair + tooltip. `describe(date)` returns tooltip content or null.
-function attachHover(svg, { from, to, left, width, top, bottom, x, describe, label }) {
+function attachHover(svg, { from, to, left, width, top, bottom, x, describe, label, onHide = null }) {
   const total = diffDays(from, to) + 1;
   const cross = s('line', { class: 'crosshair', y1: top, y2: bottom, x1: -10, x2: -10, visibility: 'hidden' });
   const hit = s('rect', { x: left, y: top, width, height: bottom - top, class: 'hit', tabindex: '0', role: 'img', 'aria-label': label });
@@ -152,6 +152,7 @@ function attachHover(svg, { from, to, left, width, top, bottom, x, describe, lab
     current = null;
     cross.setAttribute('visibility', 'hidden');
     tooltip().hidden = true;
+    onHide?.();
   };
   const dateAt = clientX => {
     const box = svg.getBoundingClientRect();
@@ -188,8 +189,17 @@ document.addEventListener('pointerdown', e => {
     const tip = tooltip();
     if (tip) tip.hidden = true;
     document.querySelectorAll('.crosshair').forEach(c => c.setAttribute('visibility', 'hidden'));
+    document.querySelectorAll('.chart-svg.focusing').forEach(svg => focusLane(svg, null));
   }
 });
+
+// Finger on a lane: that medication / activity stays, all other lanes and their lines fade back.
+function focusLane(svg, key) {
+  if ((svg.dataset.focus ?? null) === key) return;
+  if (key == null) delete svg.dataset.focus; else svg.dataset.focus = key;
+  svg.classList.toggle('focusing', key != null);
+  for (const el of svg.querySelectorAll('[data-lane]')) el.classList.toggle('dim', key != null && el.dataset.lane !== key);
+}
 
 function tipHead(date) {
   const sick = store.sickOn(date);
@@ -280,6 +290,7 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
   const bandH = store.SLOTS.length * ROW + (store.SLOTS.length - 1) * GAP;
   const LANE = 30, GROUP = 26;
   const laneRows = [];
+  const laneKey = row => (row.kind === 'med' ? `med:${row.lane.id}` : `act:${row.lane.key}`);
   const laneY = new Map();            // med id / activity key → y of its lane
   let yy = plotBottom + axisSpace - GROUP + 18;   // first group label sits clear of the date labels
   const addGroup = (label, lanes, kind) => {
@@ -310,17 +321,18 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
     for (const ev of store.medEvents(m)) {
       if (ev.date < from || ev.date > to) continue;
       const px = x(ev.date, 0);
-      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: ly, class: 'marker', style: `stroke:var(--c${m.color + 1})` }));
+      marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: ly, class: 'marker', style: `stroke:var(--c${m.color + 1})`, 'data-lane': `med:${m.id}` }));
     }
   }
   const fade = momentList.length > 40 ? .2 : .45;
   for (const m of momentList) {
     const ly = laneY.get(m.title.toLowerCase()) + 19;
-    const line = px => marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: ly, class: 'marker', style: `stroke:${colorOf(m)};opacity:${fade}` }));
+    const lane = `act:${m.title.toLowerCase()}`;
+    const line = px => marks.append(s('line', { x1: px, x2: px, y1: M.top, y2: ly, class: 'marker', style: `stroke:${colorOf(m)};opacity:${fade}`, 'data-lane': lane }));
     if (m.span) {
       const last = store.momentLast(m);
       const a = x(m.date < from ? from : m.date, 0), b = x(last > to ? to : last, 1);
-      marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}` }));
+      marks.append(s('rect', { x: a, y: M.top, width: Math.max(2, b - a), height: plotH, class: 'moment-band', style: `fill:${colorOf(m)}`, 'data-lane': lane }));
       if (m.date >= from) line(a);
       if (m.end != null && m.end <= to) line(b);
     } else {
@@ -387,10 +399,13 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
   for (const row of laneRows) {
     if (row.label) { lanesG.append(s('text', { x: left, y: row.y, class: 'lane-group' }, row.label)); continue; }
     const ly = row.y;
-    lanesG.append(s('line', { x1: left, x2: right, y1: ly + 19, y2: ly + 19, class: 'lane-track' }));
+    // every lane is its own group, so the others can fade while a finger is on this one
+    const lg = s('g', { 'data-lane': laneKey(row) });
+    lanesG.append(lg);
+    lg.append(s('line', { x1: left, x2: right, y1: ly + 19, y2: ly + 19, class: 'lane-track' }));
     if (row.kind === 'med') {
       const m = row.lane;
-      lanesG.append(s('text', { x: left, y: ly + 8, class: 'lane-name' }, m.name));
+      lg.append(s('text', { x: left, y: ly + 8, class: 'lane-name' }, m.name));
       m.phases.forEach((p, pi) => {
         const ps = p.start < from ? from : p.start;
         const pe = p.end == null || p.end > to ? to : p.end;
@@ -398,19 +413,19 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
         const prevTouching = pi > 0 && m.phases[pi - 1].end && addDays(m.phases[pi - 1].end, 1) === p.start && p.start > from;
         const xs = x(ps, 0) + (prevTouching ? 2 : 0);
         const open = p.end == null || p.end > to;
-        lanesG.append(s('path', { d: barPath(xs, ly + 14, Math.max(3, x(pe, 1) - xs), 10, p.start >= from, !open), style: `fill:var(--c${m.color + 1})`, class: 'lane-bar' }));
+        lg.append(s('path', { d: barPath(xs, ly + 14, Math.max(3, x(pe, 1) - xs), 10, p.start >= from, !open), style: `fill:var(--c${m.color + 1})`, class: 'lane-bar' }));
       });
     } else {
       const l = row.lane;
-      lanesG.append(s('text', { x: left, y: ly + 8, class: 'lane-name' }, l.name));
+      lg.append(s('text', { x: left, y: ly + 8, class: 'lane-name' }, l.name));
       for (const m of l.items) {
         if (m.span) {
           const last = store.momentLast(m);
           const xs = x(m.date < from ? from : m.date, 0), xe = x(last > to ? to : last, 1);
           const open = m.end == null || m.end > to;
-          lanesG.append(s('path', { d: barPath(xs, ly + 14, Math.max(3, xe - xs), 10, m.date >= from, !open), style: `fill:${colorOf(m)}`, class: 'lane-bar' }));
+          lg.append(s('path', { d: barPath(xs, ly + 14, Math.max(3, xe - xs), 10, m.date >= from, !open), style: `fill:${colorOf(m)}`, class: 'lane-bar' }));
         } else {
-          lanesG.append(s('circle', { cx: x(m.date, 0.5), cy: ly + 19, r: total > 120 ? 3 : 4.2, style: `fill:${colorOf(m)}`, class: 'moment-dot' }));
+          lg.append(s('circle', { cx: x(m.date, 0.5), cy: ly + 19, r: total > 120 ? 3 : 4.2, style: `fill:${colorOf(m)}`, class: 'moment-dot' }));
         }
       }
     }
@@ -420,10 +435,12 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
 
   attachHover(svg, {
     from, to, left, width: plotW, top: M.top, bottom: H - 6, x,
+    onHide: () => focusLane(svg, null),
     label: `Stimmungsverlauf vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
     describe: (date, sy) => {
       // finger on a lane: only that medication / activity
       const row = sy == null ? null : laneRows.find(r => !r.label && sy >= r.y - 3 && sy < r.y + LANE - 3);
+      focusLane(svg, row ? laneKey(row) : null);
       if (row) return row.kind === 'med' ? medTip(row.lane, date) : activityTip(row.lane, date);
       const entries = store.dayEntries(date);
       const avg = store.dayAverage(date);

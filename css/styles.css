@@ -1089,3 +1089,9 @@ a.btn { text-decoration: none; }
 .card-actions { margin-top: 12px; }
 #alltag-running-card[hidden] { display: none; }
 .act-add .day-add input { min-height: 44px; }
+
+/* finger on a lane: the others step back */
+.chart-svg [data-lane] { transition: opacity .15s; }
+.chart-svg .dim { opacity: .14 !important; }
+.chart-svg.focusing .marker[data-lane]:not(.dim) { opacity: .9 !important; stroke-width: 1.5; }
+.chart-svg.focusing .moment-band[data-lane]:not(.dim) { opacity: .18 !important; }
