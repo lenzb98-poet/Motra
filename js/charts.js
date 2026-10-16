@@ -1,5 +1,5 @@
 // Hand-built SVG charts: mood over time, and mood together with medications.
-import { s, h, addDays, diffDays, fromKey, formatDayMonth, formatMonth, formatMonthYear, formatWeekday, formatWeekdayDate, num1 } from './util.js';
+import { s, h, addDays, diffDays, fromKey, todayKey, formatDayMonth, formatMonth, formatMonthYear, formatWeekday, formatWeekdayDate, num1 } from './util.js';
 import * as store from './store.js';
 
 const tooltip = () => document.getElementById('tooltip');
@@ -97,6 +97,18 @@ function xAxis(svg, ticks, yPos) {
   svg.append(g);
 }
 
+// Height of the notch / status bar area (the app draws under it on iPhone), measured once.
+let safeTopPx = null;
+function safeAreaTop() {
+  if (safeTopPx == null) {
+    const probe = h('div', { style: { position: 'fixed', top: '0', paddingTop: 'env(safe-area-inset-top, 0px)', visibility: 'hidden' } });
+    document.body.append(probe);
+    safeTopPx = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+    probe.remove();
+  }
+  return safeTopPx;
+}
+
 // Crosshair + tooltip. `describe(date)` returns tooltip content or null.
 function attachHover(svg, { from, to, left, width, top, bottom, x, describe, label }) {
   const total = diffDays(from, to) + 1;
@@ -105,9 +117,11 @@ function attachHover(svg, { from, to, left, width, top, bottom, x, describe, lab
   svg.append(cross, hit);
   let current = null;
 
-  const show = (date, clientX, clientY) => {
+  const show = (date, clientX, clientY, touch = false) => {
     current = date;
-    const content = describe(date);
+    const box = svg.getBoundingClientRect();
+    const sy = (clientY - box.top) * (svg.viewBox.baseVal.height / box.height);   // finger height in chart units
+    const content = describe(date, sy);
     const px = x(date);
     cross.setAttribute('x1', px); cross.setAttribute('x2', px);
     cross.setAttribute('visibility', 'visible');
@@ -116,11 +130,22 @@ function attachHover(svg, { from, to, left, width, top, bottom, x, describe, lab
     tip.hidden = false;
     const r = tip.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
-    let lx = clientX + 14;
-    if (lx + r.width > vw - 8) lx = clientX - r.width - 14;
-    lx = Math.max(8, lx);
-    let ly = clientY - r.height - 12;
-    if (ly < 8) ly = clientY + 18;
+    let lx, ly;
+    if (touch) {
+      // with a finger: the info sits on top, above the chart (or at the top of the screen when the
+      // chart's top is scrolled away), so the finger never covers it
+      lx = Math.max(8, Math.min(vw - r.width - 8, clientX - r.width / 2));
+      const safeTop = safeAreaTop();
+      ly = Math.max(8 + safeTop, box.top - r.height - 8);
+      if (ly + r.height > clientY - 44) ly = Math.max(8 + safeTop, clientY - r.height - 56);
+      if (ly + r.height > clientY - 44) ly = clientY + 48;   // finger right at the top: below it instead
+    } else {
+      lx = clientX + 14;
+      if (lx + r.width > vw - 8) lx = clientX - r.width - 14;
+      lx = Math.max(8, lx);
+      ly = clientY - r.height - 12;
+      if (ly < 8) ly = clientY + 18;
+    }
     tip.style.transform = `translate(${Math.round(lx)}px, ${Math.round(ly)}px)`;
   };
   const hide = () => {
@@ -134,8 +159,8 @@ function attachHover(svg, { from, to, left, width, top, bottom, x, describe, lab
     const idx = Math.max(0, Math.min(total - 1, Math.floor(((px - left) / width) * total)));
     return addDays(from, idx);
   };
-  hit.addEventListener('pointermove', e => show(dateAt(e.clientX), e.clientX, e.clientY));
-  hit.addEventListener('pointerdown', e => show(dateAt(e.clientX), e.clientX, e.clientY));
+  hit.addEventListener('pointermove', e => show(dateAt(e.clientX), e.clientX, e.clientY, e.pointerType !== 'mouse'));
+  hit.addEventListener('pointerdown', e => show(dateAt(e.clientX), e.clientX, e.clientY, e.pointerType !== 'mouse'));
   hit.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hide(); });
   // Touch: the info shows while the finger is on the chart and goes away when it is lifted.
   for (const type of ['pointerup', 'pointercancel']) hit.addEventListener(type, e => { if (e.pointerType !== 'mouse') hide(); });
@@ -396,7 +421,10 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
   attachHover(svg, {
     from, to, left, width: plotW, top: M.top, bottom: H - 6, x,
     label: `Stimmungsverlauf vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
-    describe: date => {
+    describe: (date, sy) => {
+      // finger on a lane: only that medication / activity
+      const row = sy == null ? null : laneRows.find(r => !r.label && sy >= r.y - 3 && sy < r.y + LANE - 3);
+      if (row) return row.kind === 'med' ? medTip(row.lane, date) : activityTip(row.lane, date);
       const entries = store.dayEntries(date);
       const avg = store.dayAverage(date);
       const t = store.trend(date);
@@ -410,17 +438,60 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
       }
       const notes = store.SLOTS.map(sl => entries[sl.id]?.note).filter(Boolean);
       if (notes.length) box.append(h('div', { class: 'tip-note' }, notes.join(' · ')));
-      const active = medLanes.map(m => [m, store.activePhase(m, date)]).filter(([, p]) => p);
-      const acts = momentList.filter(m => store.momentCovers(m, date));
-      if (active.length || acts.length) box.append(h('div', { class: 'tip-sep' }));
-      for (const [m, p] of active) box.append(tipRow(h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } }), p.dose || '–', m.name));
-      for (const m of acts) box.append(tipRow(h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: colorOf(m) } }), '', m.title));
+      // medications and activities have their own info on their lanes; here only the day's changes
       for (const m of medLanes) for (const ev of store.medEvents(m)) if (ev.date === date) box.append(h('div', { class: 'tip-note' }, eventText(ev)));
+      if (!medLanes.length && !momentList.length) {
+        const active = store.getState().meds.filter(m => !m.archived && store.activePhase(m, date));
+        if (active.length) box.append(h('div', { class: 'tip-sep' }), ...active.map(m => tipRow(h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } }), store.activePhase(m, date).dose || '–', m.name)));
+      }
       return box;
     },
   });
 
   container.replaceChildren(svg);
+}
+
+// Tooltip for one medication / therapy lane: what was taken that day, and that phase.
+function medTip(m, date) {
+  const box = h('div', null, tipHead(date));
+  const sw = h('span', { class: 'key-bar', style: { background: `var(--c${m.color + 1})` } });
+  const p = store.activePhase(m, date);
+  if (!p) {
+    box.append(tipRow(sw, '', m.name), h('div', { class: 'tip-empty' }, m.kind === 'therapy' ? 'An diesem Tag keine Therapie' : 'An diesem Tag nicht genommen'));
+    return box;
+  }
+  box.append(tipRow(sw, p.dose || '–', m.name));
+  box.append(h('div', { class: 'tip-note' }, p.end ? `${formatDayMonth(p.start)} – ${formatDayMonth(p.end)}` : `seit ${formatDayMonth(p.start)}`));
+  const last = p.end && p.end < todayKey() ? p.end : todayKey();
+  const w = store.windowAverage(p.start, last);
+  if (w.avg != null) box.append(tipRow(keyLine('day'), num1(w.avg), `Ø in dieser Zeit (${w.days} T.)`));
+  for (const ev of store.medEvents(m)) if (ev.date === date) box.append(h('div', { class: 'tip-note' }, eventText(ev)));
+  return box;
+}
+
+// Tooltip for one activity lane: the period (or the day entry) under the finger.
+function activityTip(lane, date) {
+  const box = h('div', null, tipHead(date));
+  const colors = store.momentColors();
+  const color = `var(--c${(colors.get(lane.key) ?? 0) + 1})`;
+  const m = lane.items.find(x => store.momentCovers(x, date));
+  if (!m) {
+    box.append(tipRow(h('span', { class: lane.span ? 'key-bar' : 'key-dot', style: { background: color } }), '', lane.name), h('div', { class: 'tip-empty' }, 'An diesem Tag nicht'));
+    return box;
+  }
+  box.append(tipRow(h('span', { class: m.span ? 'key-bar' : 'key-dot', style: { background: color } }), '', m.title));
+  if (m.span) {
+    const today = todayKey();
+    box.append(h('div', { class: 'tip-note' }, m.end == null ? `seit ${formatDayMonth(m.date)} · läuft` : `${formatDayMonth(m.date)} – ${formatDayMonth(m.end)}`));
+    const last = store.momentLast(m) < today ? store.momentLast(m) : today;
+    const w = store.windowAverage(m.date, last);
+    if (w.avg != null) box.append(tipRow(keyLine('day'), num1(w.avg), `Ø währenddessen (${w.days} T.)`));
+  } else {
+    const avg = store.dayAverage(date);
+    box.append(avg != null ? tipRow(keyLine('day'), num1(avg), 'Ø an diesem Tag') : h('div', { class: 'tip-empty' }, 'Kein Stimmungseintrag'));
+  }
+  if (m.note) box.append(h('div', { class: 'tip-note' }, m.note));
+  return box;
 }
 
 export function timelineLegend(el, { from, to }) {
