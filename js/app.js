@@ -215,7 +215,7 @@ function loadFormEntry() {
   form.note = e?.note ?? '';
   form.dirty = false;
   $('#entry-note').value = form.note;
-  showNote(!!form.note.trim());
+  showNote();
 }
 
 function selectEntry(date, slot) {
@@ -235,13 +235,20 @@ function greeting() {
   return 'Gute Nacht';
 }
 
-// The note opens on request; an entry that already has one shows it right away. No auto focus:
-// the keyboard should only come up when the field itself is tapped.
-function showNote(open) {
-  $('#note-wrap').hidden = !open;
-  $('#btn-note').hidden = open;
-  $('#btn-note').setAttribute('aria-expanded', String(open));
+// Two tabs under the faces: "Was war heute?" (open by default) and "Notiz". One is open at a time,
+// tapping the open one folds it. No auto focus: the keyboard only comes up when the field is tapped.
+let entryTab = 'day';
+function showEntryTab(tab) {
+  entryTab = tab;
+  for (const [name, panel] of [['day', '#panel-day'], ['note', '#note-wrap']]) {
+    const open = tab === name;
+    $(`#tab-${name}`).setAttribute('aria-expanded', String(open));
+    $(`#tab-${name}`).classList.toggle('open', open);
+    $(panel).hidden = !open;
+  }
 }
+// a dot on "Notiz" shows that the entry has a note, even while the tab is folded
+const showNote = () => { $('#tab-note-dot').hidden = !form.note.trim(); };
 
 /* "Was war heute?": activities of the chosen day with one tap, periods running then, illness. */
 let dayAddOpen = false;
@@ -259,6 +266,9 @@ function renderDay() {
   const covering = moments.filter(m => m.span && !m.archived && store.momentCovers(m, date)).sort((a, b) => Number(!!b.sick) - Number(!!a.sick) || a.date.localeCompare(b.date));
   $('#day-running').replaceChildren(...covering.map(m => endablePeriod(m, colors)));
   $('#day-running').hidden = !covering.length;
+  const count = covering.length + moments.filter(m => !m.span && !m.archived && m.date === date).length;
+  $('#tab-day-count').hidden = !count;
+  $('#tab-day-count').textContent = String(count);
 
   // single activities: titles used before, most frequent first; tap sets or removes it for this day
   const onDay = moments.filter(m => !m.span && !m.archived && m.date === date);
@@ -655,6 +665,7 @@ function initHeute() {
     form.note = e.target.value;
     form.dirty = true;
     updateSaveButton();
+    showNote();
   });
 
   initFineSlider();
@@ -1512,7 +1523,8 @@ $('#btn-im-sick').addEventListener('click', () => {
   store.addMoment({ date: todayKey(), title: 'Krank', span: true, sick: true });
   toast('Krank seit heute eingetragen. Gute Besserung!');
 });
-$('#btn-note').addEventListener('click', () => showNote(true));
+for (const name of ['day', 'note']) $(`#tab-${name}`).addEventListener('click', () => showEntryTab(entryTab === name ? null : name));
+showEntryTab('day');
 $('#day-add-btn').addEventListener('click', addDayActivity);
 $('#day-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addDayActivity(); } });
 $('#btn-more-entries').addEventListener('click', () => { listDays += 14; renderEntryList(); });

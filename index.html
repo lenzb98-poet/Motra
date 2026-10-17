@@ -70,11 +70,22 @@
             <p class="mood-caption" id="mood-caption" aria-live="polite">Tippe auf ein Gesicht.</p>
           </fieldset>
 
-          <!-- A note is optional: it opens on request (or by itself if the entry already has one) -->
-          <button type="button" class="note-toggle" id="btn-note" aria-expanded="false" aria-controls="note-wrap">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg><span id="btn-note-label">Notiz hinzufügen</span>
-          </button>
-          <div id="note-wrap" hidden>
+          <!-- Two tabs right under the faces: what else was going on (open by default) and the note -->
+          <div class="entry-tabs" role="group" aria-label="Zum Eintrag">
+            <button type="button" class="entry-tab open" id="tab-day" aria-expanded="true" aria-controls="panel-day"><span id="h-day">Was war heute?</span> <span class="entry-count" id="tab-day-count" hidden></span></button>
+            <button type="button" class="entry-tab" id="tab-note" aria-expanded="false" aria-controls="note-wrap">Notiz <span class="optional">optional</span><span class="entry-count dot" id="tab-note-dot" hidden aria-label="enthält Text"></span></button>
+          </div>
+          <div id="panel-day" class="entry-panel day-panel">
+            <p class="card-meta" id="day-meta"></p>
+            <div class="period-list" id="day-running"></div>
+            <div class="other-quick" id="day-chips"></div>
+            <div class="day-add" id="day-add" hidden>
+              <input type="text" id="day-input" maxlength="80" placeholder="z. B. Spaziergang" aria-label="Neue Aktivität" autocomplete="off">
+              <button type="button" class="btn" id="day-add-btn">Hinzufügen</button>
+            </div>
+            <button type="button" class="btn ghost wide sick-btn" id="btn-im-sick"><span class="key-sick" aria-hidden="true"></span>Ich bin krank</button>
+          </div>
+          <div id="note-wrap" class="entry-panel" hidden>
             <textarea id="entry-note" name="note" rows="3" maxlength="1000" placeholder="Was beschäftigt dich? Wie hast du geschlafen?" aria-label="Notiz"></textarea>
           </div>
 
@@ -83,21 +94,6 @@
             <button type="submit" class="btn primary" id="btn-save" disabled>Speichern</button>
           </div>
         </form>
-
-        <!-- What else was going on that day: activities with one tap, running periods, illness -->
-        <section class="card day-card" aria-labelledby="h-day">
-          <div class="card-head">
-            <h2 id="h-day" class="h2">Was war heute?</h2>
-            <p class="card-meta" id="day-meta"></p>
-          </div>
-          <div class="period-list" id="day-running"></div>
-          <div class="other-quick" id="day-chips"></div>
-          <div class="day-add" id="day-add" hidden>
-            <input type="text" id="day-input" maxlength="80" placeholder="z. B. Spaziergang" aria-label="Neue Aktivität" autocomplete="off">
-            <button type="button" class="btn" id="day-add-btn">Hinzufügen</button>
-          </div>
-          <button type="button" class="btn ghost wide sick-btn" id="btn-im-sick"><span class="key-sick" aria-hidden="true"></span>Ich bin krank</button>
-        </section>
 
         <section class="card week-card" aria-labelledby="h-week">
           <div class="card-head">

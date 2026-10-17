@@ -1095,3 +1095,25 @@ a.btn { text-decoration: none; }
 .chart-svg .dim { opacity: .14 !important; }
 .chart-svg.focusing .marker[data-lane]:not(.dim) { opacity: .9 !important; stroke-width: 1.5; }
 .chart-svg.focusing .moment-band[data-lane]:not(.dim) { opacity: .18 !important; }
+
+/* Heute: tabs "Was war heute?" | "Notiz" inside the mood card */
+.entry-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px; margin-bottom: -6px; }
+.entry-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 34px; padding: 0 0 4px;
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  font-size: 13.5px; font-weight: 600; color: var(--text-2);
+}
+.entry-tab::after { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .2s; }
+.entry-tab.open { color: var(--text); border-bottom-color: var(--accent); }
+.entry-tab.open::after { transform: translateY(1px) rotate(225deg); }
+.entry-tab .optional { margin-left: 0; }
+.entry-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.entry-count { min-width: 18px; padding: 0 6px; border-radius: 99px; background: var(--accent); color: var(--on-accent); font-size: 11px; line-height: 18px; text-align: center; }
+.entry-count.dot { min-width: 0; width: 7px; height: 7px; padding: 0; line-height: 0; }
+.entry-count[hidden] { display: none; }
+.entry-panel { display: flex; flex-direction: column; gap: 10px; }
+.entry-panel[hidden] { display: none; }
+.day-panel .card-meta { margin: 0; }
+.day-panel .period-list { margin-top: 0; }
+.day-panel .period-list[hidden] { display: none; }

@@ -10,8 +10,7 @@ Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf**
 
 - **Heute**
   - Stimmung auf einer 5er-Skala für Morgen, Mittag oder Abend; vergangene Tage über das Datum nachtragen. Gesicht gedrückt halten und zur Seite ziehen öffnet den Feinregler für Zwischenwerte wie 3,6.
-  - „Notiz hinzufügen“ öffnet ein Notizfeld (ohne dass die Tastatur von selbst aufgeht).
-  - „Was war heute?“: Aktivitäten mit einem Tipp setzen oder wegnehmen, neue mit „＋ Neu“. Laufende Zeitspannen und Krankheiten stehen darüber, ein Tipp zeigt Details und beendet sie. „Ich bin krank“ startet eine Krankheit ab heute.
+  - Unter den Gesichtern zwei Reiter: **„Was war heute?“** (standardmäßig offen) und **„Notiz“** (ohne dass die Tastatur von selbst aufgeht). In „Was war heute?“ setzt du Aktivitäten mit einem Tipp oder nimmst sie weg, neue mit „＋ Neu“. Laufende Zeitspannen und Krankheiten stehen darüber, ein Tipp zeigt Details und beendet sie. „Ich bin krank“ startet eine Krankheit ab heute. Ein Zähler am Reiter zeigt, wie viel für den Tag eingetragen ist.
   - „Deine Woche“: die letzten 7 Tage als Farbraster.
 - **Verlauf**
   - Eine Ansicht (7 T, 30 T, 90 T, 1 J, Alle) für alles. Kennzahlen: Durchschnitt, Veränderung, Anzahl Einträge.
