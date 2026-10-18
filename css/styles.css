@@ -1121,3 +1121,4 @@ a.btn { text-decoration: none; }
 .layer-toggles { gap: 5px; }
 .layer-chip { min-height: 30px; padding: 0 9px 0 7px; gap: 5px; font-size: 12px; }
 .layer-check { width: 13px; height: 13px; }
+.card-head.stack .layer-toggles { flex: 1 1 100%; flex-wrap: wrap; }
