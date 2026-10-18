@@ -250,14 +250,15 @@ function emptyState(container, text) {
 
 const kindOf = m => (m.kind === 'therapy' ? 'therapy' : 'med');
 
-export function timelineChart(container, { from, to, meds: withMeds = true, moments: withMoments = false }) {
+export function timelineChart(container, { from, to, meds: withMeds = true, therapies: withTherapies = withMeds, moments: withMoments = false }) {
   const width = Math.max(280, container.clientWidth);
   const total = diffDays(from, to) + 1;
   const stats = store.rangeStats(from, to);
 
   // which lanes to draw
   // archived things stay out of the chart (their data is kept and comes back when restored)
-  const medLanes = !withMeds ? [] : [...store.getState().meds]
+  const medLanes = [...store.getState().meds]
+    .filter(m => (kindOf(m) === 'therapy' ? withTherapies : withMeds))
     .filter(m => !m.archived && m.phases.some(p => p.start <= to && (p.end == null || p.end >= from)))
     .sort((a, b) => (kindOf(a) === 'therapy') - (kindOf(b) === 'therapy'));
   const colors = store.momentColors();
@@ -301,7 +302,8 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
     const hgt = kind === 'med' ? LANE + 12 : LANE;
     for (const l of lanes) { laneRows.push({ kind, lane: l, y: yy, h: hgt }); laneY.set(kind === 'med' ? l.id : l.key, yy); yy += hgt; }
   };
-  addGroup('MEDIKAMENTE & THERAPIEN', medLanes, 'med');
+  addGroup('MEDIKAMENTE', medLanes.filter(m => kindOf(m) !== 'therapy'), 'med');
+  addGroup('THERAPIEN', medLanes.filter(m => kindOf(m) === 'therapy'), 'med');
   addGroup('AKTIVITÄTEN', actLanes, 'act');
   const bandTop = laneRows.length ? yy + 12 : plotBottom + axisSpace;
   const H = bandTop + bandH + 6;

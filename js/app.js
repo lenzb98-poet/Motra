@@ -13,7 +13,7 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { range: '30', layers: { meds: true, moments: false }, kindFilter: 'all', backupHiddenOn: null };
+let prefs = { range: '30', layers: { meds: true, therapies: true, moments: false }, kindFilter: 'all', backupHiddenOn: null };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
@@ -25,6 +25,8 @@ try {
   // earlier versions had a range per tab and "Anderes" inside the medication tab
   if (!old.range && old.rangeVerlauf) prefs.range = old.rangeVerlauf;
   if (!['all', 'med', 'therapy'].includes(prefs.kindFilter)) prefs.kindFilter = 'all';
+  // medications and therapies used to share one switch
+  if (prefs.layers && prefs.layers.therapies === undefined) prefs.layers = { ...prefs.layers, therapies: prefs.layers.meds !== false };
   for (const k of ['rangeVerlauf', 'rangeMedis', 'rangeOther', 'lastKind', 'medListOpen', 'entryTab', 'todayOtherOpen']) delete prefs[k];
 } catch (e) { /* ignore */ }
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
@@ -732,18 +734,20 @@ function renderVerlauf() {
 
   // one chart for everything; medications and activities can be shown as extra lanes
   const state = store.getState();
-  const hasMeds = state.meds.length > 0;
-  const hasActs = state.moments.some(m => !m.sick);
+  const live = state.meds.filter(m => !m.archived);
+  const hasMeds = live.some(m => m.kind !== 'therapy');
+  const hasTherapies = live.some(m => m.kind === 'therapy');
+  const hasActs = state.moments.some(m => !m.sick && !m.archived);
   const layer = (key, label) => h('button', {
     type: 'button', class: `layer-chip${prefs.layers[key] ? ' on' : ''}`, 'aria-pressed': String(!!prefs.layers[key]),
     onclick: () => { prefs.layers = { ...prefs.layers, [key]: !prefs.layers[key] }; savePrefs(); renderVerlauf(); },
   }, h('span', { class: 'layer-check', 'aria-hidden': 'true' }), label);
-  $('#layers').replaceChildren(...[hasMeds && layer('meds', 'Medikamente'), hasActs && layer('moments', 'Aktivitäten')].filter(Boolean));
+  $('#layers').replaceChildren(...[hasMeds && layer('meds', 'Medikamente'), hasTherapies && layer('therapies', 'Therapien'), hasActs && layer('moments', 'Aktivitäten')].filter(Boolean));
   timelineLegend($('#timeline-legend'), { from, to });
   $('#band-legend').replaceChildren(
     ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
     h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
-  timelineChart($('#timeline'), { from, to, meds: hasMeds && prefs.layers.meds, moments: hasActs && prefs.layers.moments });
+  timelineChart($('#timeline'), { from, to, meds: hasMeds && !!prefs.layers.meds, therapies: hasTherapies && !!prefs.layers.therapies, moments: hasActs && !!prefs.layers.moments });
 
   renderInsights(from, to);
 

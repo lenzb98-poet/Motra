@@ -1117,3 +1117,7 @@ a.btn { text-decoration: none; }
 .day-panel .card-meta { margin: 0; }
 .day-panel .period-list { margin-top: 0; }
 .day-panel .period-list[hidden] { display: none; }
+/* three layer switches in one row on a phone */
+.layer-toggles { gap: 5px; }
+.layer-chip { min-height: 30px; padding: 0 9px 0 7px; gap: 5px; font-size: 12px; }
+.layer-check { width: 13px; height: 13px; }
