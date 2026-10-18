@@ -297,7 +297,9 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
     if (!lanes.length) return;
     yy += GROUP;
     laneRows.push({ label, y: yy - 9 });
-    for (const l of lanes) { laneRows.push({ kind, lane: l, y: yy }); laneY.set(kind === 'med' ? l.id : l.key, yy); yy += LANE; }
+    // medication lanes are a little taller: the dose stands under each bar
+    const hgt = kind === 'med' ? LANE + 12 : LANE;
+    for (const l of lanes) { laneRows.push({ kind, lane: l, y: yy, h: hgt }); laneY.set(kind === 'med' ? l.id : l.key, yy); yy += hgt; }
   };
   addGroup('MEDIKAMENTE & THERAPIEN', medLanes, 'med');
   addGroup('AKTIVITÄTEN', actLanes, 'act');
@@ -406,6 +408,7 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
     if (row.kind === 'med') {
       const m = row.lane;
       lg.append(s('text', { x: left, y: ly + 8, class: 'lane-name' }, m.name));
+      let lastLabelEnd = -Infinity;
       m.phases.forEach((p, pi) => {
         const ps = p.start < from ? from : p.start;
         const pe = p.end == null || p.end > to ? to : p.end;
@@ -414,6 +417,14 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
         const xs = x(ps, 0) + (prevTouching ? 2 : 0);
         const open = p.end == null || p.end > to;
         lg.append(s('path', { d: barPath(xs, ly + 14, Math.max(3, x(pe, 1) - xs), 10, p.start >= from, !open), style: `fill:var(--c${m.color + 1})`, class: 'lane-bar' }));
+        // dose (or frequency) under the bar, skipped where it would run into the previous one
+        const label = p.dose || '';
+        const tx = Math.max(xs, left);
+        const estW = label.length * 6.2;
+        if (label && tx >= lastLabelEnd + 6 && tx + estW <= right) {
+          lg.append(s('text', { x: tx, y: ly + 36, class: 'lane-dose' }, label));
+          lastLabelEnd = tx + estW;
+        }
       });
     } else {
       const l = row.lane;
@@ -439,7 +450,7 @@ export function timelineChart(container, { from, to, meds: withMeds = true, mome
     label: `Stimmungsverlauf vom ${formatWeekdayDate(from)} bis ${formatWeekdayDate(to)}. Pfeiltasten wählen einen Tag.`,
     describe: (date, sy) => {
       // finger on a lane: only that medication / activity
-      const row = sy == null ? null : laneRows.find(r => !r.label && sy >= r.y - 3 && sy < r.y + LANE - 3);
+      const row = sy == null ? null : laneRows.find(r => !r.label && sy >= r.y - 3 && sy < r.y + r.h - 3);
       focusLane(svg, row ? laneKey(row) : null);
       if (row) return row.kind === 'med' ? medTip(row.lane, date) : activityTip(row.lane, date);
       const entries = store.dayEntries(date);
