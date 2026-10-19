@@ -10,7 +10,7 @@ Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf**
 
 - **Heute**
   - Stimmung auf einer 5er-Skala für Morgen, Mittag oder Abend; vergangene Tage über das Datum nachtragen. Gesicht gedrückt halten und zur Seite ziehen öffnet den Feinregler für Zwischenwerte wie 3,6.
-  - Unter den Gesichtern zwei Reiter: **„Was war heute?“** (standardmäßig offen) und **„Notiz“** (ohne dass die Tastatur von selbst aufgeht). In „Was war heute?“ setzt du Aktivitäten mit einem Tipp oder nimmst sie weg, neue mit „＋ Neu“. Laufende Zeitspannen und Krankheiten stehen darüber, ein Tipp zeigt Details und beendet sie. „Ich bin krank“ startet eine Krankheit ab heute. Ein Zähler am Reiter zeigt, wie viel für den Tag eingetragen ist.
+  - Unter den Gesichtern zwei Reiter: **„Was war heute?“** (standardmäßig offen) und **„Notiz“** (ohne dass die Tastatur von selbst aufgeht). In „Was war heute?“ setzt du Aktivitäten mit einem Tipp oder nimmst sie weg, neue mit „＋ Neu“. Laufende Zeitspannen und Krankheiten stehen darüber, ein Tipp zeigt Details und beendet sie. Ein Zähler am Reiter zeigt, wie viel für den Tag eingetragen ist.
   - „Deine Woche“: die letzten 7 Tage als Farbraster.
 - **Verlauf**
   - Eine Ansicht (7 T, 30 T, 90 T, 1 J, Alle) für alles. Kennzahlen: Durchschnitt, Veränderung, Anzahl Einträge.
@@ -21,7 +21,7 @@ Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf**
   - Medikamente mit Dosis und Therapien mit Häufigkeit (Therapien auch im Voraus geplant). Ein Tipp öffnet die Details: Dosis ändern, absetzen oder wieder aufnehmen, Stimmung mit und ohne, jede Veränderung im Vergleich 4 Wochen vorher zu Woche 3 bis 6 danach, Bearbeiten und Archivieren.
 - **Alltag**
   - Was gerade läuft, alle Aktivitäten mit Details (Stimmung mit und ohne, bei Zeitspannen die 4 Wochen davor, währenddessen und die 4 Wochen danach, alle Einträge, für einen Tag nachtragen, nach einer beendeten Zeitspanne eine neue starten, archivieren) und „Zeitspanne anlegen“ für Urlaub, Kurse und Ähnliches.
-  - „Krank“: laufende Krankheit beenden, frühere ansehen und nachtragen.
+  - „Krank“: eine Krankheit eintragen (auch ab heute), die laufende beenden, frühere ansehen und nachtragen. Solange du krank bist, steht sie auch auf „Heute“ bei den laufenden Einträgen.
 - **Archiv:** Medikamente, Therapien und Aktivitäten lassen sich archivieren statt löschen. Sie verschwinden aus den Listen, aus der Grafik im Verlauf und aus „Was auffällt“. Die Daten bleiben erhalten; wiederhergestellt ist alles wieder da.
 - **Daten:** Sicherung als JSON herunterladen und wiederherstellen, CSV-Tabelle für den Arzttermin, Beispieldaten zum Ausprobieren.
 - **Synchronisierung (optional):** In den Einstellungen mit E-Mail, Passwort und Code aus einer Authenticator-App anmelden. Danach gleicht Motra beim Öffnen, nach jedem Speichern und alle zwei Minuten ab.

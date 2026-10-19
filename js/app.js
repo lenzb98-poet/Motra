@@ -299,8 +299,6 @@ function renderDay() {
     ? 'Tippe an, was du gemacht oder erlebt hast. Noch mal tippen nimmt es weg.'
     : 'Zum Beispiel eine Morgenroutine, ein Spaziergang oder ein gutes Gespräch. Tippe auf „＋ Neu“.';
 
-  // "Ich bin krank": for today, as long as no illness is running
-  $('#btn-im-sick').hidden = !isToday || covering.some(m => m.sick);
 }
 
 function toggleDayActivity(title) {
@@ -333,7 +331,7 @@ function renderSickStatus() {
   const all = store.illnesses();
   $('#sick-status').textContent = cur
     ? `${cur.title} seit ${formatShort(cur.date)}`
-    : all.length ? `Zuletzt: ${all[0].title}, ${momentDateLabel(all[0])}` : 'Krankheitstage nachtragen und ansehen';
+    : all.length ? `Krank? Hier eintragen · zuletzt ${all[0].title}, ${momentDateLabel(all[0])}` : 'Krank? Hier eintragen';
   $('#btn-sick').classList.toggle('active', !!cur);
 }
 
@@ -1523,10 +1521,6 @@ $('#btn-settings').addEventListener('click', settingsSheet);
 $('#btn-add-med').addEventListener('click', () => addMedSheet(prefs.kindFilter === 'therapy' ? 'therapy' : 'med'));
 $('#btn-new-span').addEventListener('click', newSpanSheet);
 $('#btn-sick').addEventListener('click', sickSheet);
-$('#btn-im-sick').addEventListener('click', () => {
-  store.addMoment({ date: todayKey(), title: 'Krank', span: true, sick: true });
-  toast('Krank seit heute eingetragen. Gute Besserung!');
-});
 for (const name of ['day', 'note']) $(`#tab-${name}`).addEventListener('click', () => showEntryTab(entryTab === name ? null : name));
 showEntryTab('day');
 $('#day-add-btn').addEventListener('click', addDayActivity);
