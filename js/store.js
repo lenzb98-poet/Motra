@@ -46,7 +46,7 @@ export function currentSlot(date = new Date()) {
 /* ---------------- state & persistence ---------------- */
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
-const blank = () => ({ version: 1, entries: [], meds: [], moments: [], deleted: { entries: {}, meds: {}, moments: {} }, settings: { lastBackup: null } });
+const blank = () => ({ version: 1, entries: [], meds: [], moments: [], colors: {}, deleted: { entries: {}, meds: {}, moments: {} }, settings: { lastBackup: null } });
 const entryKey = e => `${e.date}|${e.slot}`;
 const now = () => new Date().toISOString();
 // Every change to a medication bumps its timestamp; sync keeps the newer copy.
@@ -143,14 +143,48 @@ export function normalize(data) {
     });
   }
   entries.sort((a, b) => a.date.localeCompare(b.date) || SLOT_IDS.indexOf(a.slot) - SLOT_IDS.indexOf(b.slot));
-  return {
+  const out = {
     version: 1,
     entries,
     meds,
     moments: normalizeMoments(data.moments),
+    colors: cleanColors(data.colors),
     deleted: { entries: cleanStamps(data.deleted?.entries), meds: cleanStamps(data.deleted?.meds), moments: cleanStamps(data.deleted?.moments) },
     settings: { lastBackup: typeof data.settings?.lastBackup === 'string' ? data.settings.lastBackup : null },
   };
+  fillColors(out);
+  return out;
+}
+
+/* Activity colors: every name keeps the color it got once (stored and synced), so adding,
+   back-dating or deleting other activities never repaints it. A new name takes the color used least. */
+const COLOR_COUNT = 8;
+function cleanColors(obj) {
+  const out = {};
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) if (typeof k === 'string' && k.length <= 80 && Number.isInteger(v) && v >= 0 && v < COLOR_COUNT) out[k] = v;
+  }
+  return out;
+}
+function fillColors(data) {
+  const map = data.colors ?? (data.colors = {});
+  const first = new Map();
+  for (const m of data.moments) {
+    if (m.sick) continue;
+    const k = m.title.toLowerCase();
+    if (!first.has(k) || m.date < first.get(k)) first.set(k, m.date);
+  }
+  // first use decides the order for names without a color (that's how colors were picked before)
+  const missing = [...first].filter(([k]) => map[k] == null).sort((a, b) => a[1].localeCompare(b[1]) || (a[0] < b[0] ? -1 : 1));
+  for (const [k] of missing) {
+    // count every name that ever had a color, so a deleted one that comes back doesn't share it
+    const used = Array(COLOR_COUNT).fill(0);
+    for (const v of Object.values(map)) used[v]++;
+    let best = 0;
+    for (let i = 1; i < COLOR_COUNT; i++) if (used[i] < used[best]) best = i;
+    map[k] = best;
+  }
+  return map;
 }
 
 // "Anderes": things done or experienced. Either on one day (a routine, a moment that made a
@@ -223,6 +257,7 @@ const spanFields = (date, span, end, sick = false) => (span || sick ? { span: tr
 export function addMoment({ date, title, note = '', span = false, end = null, sick = false }) {
   state.moments.push({ id: uid(), date, title: title.trim().slice(0, 80), ...spanFields(date, span, end, sick), note: note.trim().slice(0, 500), updatedAt: now() });
   state.moments.sort(byMoment);
+  fillColors(state);
   commit();
 }
 
@@ -232,6 +267,7 @@ export function updateMoment(id, { date, title, note, span = false, end = null, 
   delete m.span; delete m.end; delete m.sick; delete m.demo;
   Object.assign(m, { date, title: title.trim().slice(0, 80), ...spanFields(date, span, end, sick), note: note.trim().slice(0, 500), updatedAt: now() });
   state.moments.sort(byMoment);
+  fillColors(state);
   commit();
 }
 
@@ -278,14 +314,7 @@ export function deleteMoment(id) {
 // Every title gets its own color from the medication palette (0..7). The order is the order of
 // first use, so the colors are the same on all devices and don't change between ranges.
 export function momentColors() {
-  const first = new Map();
-  for (const m of state.moments) {
-    if (m.sick) continue;   // illness has its own area and its own red stripes
-    const k = m.title.toLowerCase();
-    if (!first.has(k) || m.date < first.get(k)) first.set(k, m.date);
-  }
-  const order = [...first].sort((a, b) => a[1].localeCompare(b[1]) || (a[0] < b[0] ? -1 : 1));
-  return new Map(order.map(([k], i) => [k, i % 8]));
+  return new Map(Object.entries(fillColors(state)));
 }
 
 // Titles used so far, most frequent first (for the quick buttons).
@@ -589,10 +618,17 @@ function canonical(src) {
     entries: src.entries.filter(e => !e.demo).map(projectEntry).sort(byEntryKey),
     meds: src.meds.filter(m => !m.demo).map(projectMed).sort(byId),
     moments: (src.moments ?? []).filter(m => !m.demo).map(projectMoment).sort(byId),
+    colors: syncedColors(src),
     deleted: {
       entries: sortedStamps(src.deleted.entries), meds: sortedStamps(src.deleted.meds), moments: sortedStamps(src.deleted.moments ?? {}),
     },
   };
+}
+
+function syncedColors(src) {
+  const demoOnly = new Set((src.moments ?? []).filter(m => m.demo).map(m => m.title.toLowerCase()));
+  for (const m of src.moments ?? []) if (!m.demo) demoOnly.delete(m.title.toLowerCase());
+  return Object.fromEntries(Object.entries(src.colors ?? {}).filter(([k]) => !demoOnly.has(k)).sort((a, b) => (a[0] < b[0] ? -1 : 1)));
 }
 
 const TOMBSTONE_DAYS = 400;
@@ -642,6 +678,15 @@ export function mergeRemote(remoteData) {
   state.moments = [...moments.values()].filter(m => m.demo || !(deleted.moments[m.id] >= m.updatedAt)).sort(byMoment);
   state.meds = [...meds.values()].filter(m => m.demo || !(deleted.meds[m.id] >= m.updatedAt));
   state.deleted = deleted;
+
+  // colors: keep ours, take names we didn't know; if two devices picked different colors for the
+  // same new name, both settle on the smaller number. Only colors the other device really stored count.
+  const theirs = cleanColors(remoteData.colors);
+  for (const [k, v] of Object.entries(theirs)) {
+    const mine = state.colors[k];
+    state.colors[k] = mine == null ? v : Math.min(mine, v);
+  }
+  fillColors(state);
 
   const changed = JSON.stringify(syncPayload()) !== before;
   if (changed) commit({ remote: true });
