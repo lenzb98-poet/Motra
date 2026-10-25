@@ -1,5 +1,5 @@
 // Hand-built SVG charts: mood over time, and mood together with medications.
-import { s, h, addDays, diffDays, fromKey, todayKey, formatDayMonth, formatMonth, formatMonthYear, formatWeekday, formatWeekdayDate, num1 } from './util.js';
+import { s, h, addDays, diffDays, fromKey, todayKey, formatDayMonth, formatMonth, formatMonthYear, formatWeekday, formatWeekdayDate } from './util.js';
 import * as store from './store.js';
 
 const tooltip = () => document.getElementById('tooltip');
@@ -83,7 +83,7 @@ function yAxis(svg, y, left, right) {
   for (let v = 1; v <= 5; v++) {
     g.append(s('line', { x1: left, x2: right, y1: y(v), y2: y(v), class: v === 1 ? 'baseline' : 'grid' }));
     g.append(s('circle', { cx: 8, cy: y(v), r: 3.5, style: `fill:var(--m${v})` }));
-    g.append(s('text', { x: 16, y: y(v), class: 'tick', 'dominant-baseline': 'central' }, v));
+    g.append(s('text', { x: 16, y: y(v), class: 'tick', 'dominant-baseline': 'central' }, store.formatScore(v)));
   }
   svg.append(g);
 }
@@ -280,7 +280,7 @@ export function timelineChart(container, { from, to, meds: withMeds = true, ther
   }
 
   // layout
-  const M = { top: 12, right: 14, left: 30 };
+  const M = { top: 12, right: 14, left: 40 };   // room for the −10 … +10 labels
   const plotH = 190;
   // Order below the plot: date axis, then the lanes (so their start/end lines run straight up
   // into the plot), then the color band at the very bottom.
@@ -460,8 +460,8 @@ export function timelineChart(container, { from, to, meds: withMeds = true, ther
       const t = store.trend(date);
       const box = h('div', null, tipHead(date));
       if (avg == null) box.append(h('div', { class: 'tip-empty' }, 'Kein Eintrag'));
-      else box.append(tipRow(keyLine('day'), num1(avg), 'Tagesdurchschnitt'));
-      if (t != null) box.append(tipRow(keyLine('trend'), num1(t), '7-Tage-Schnitt'));
+      else box.append(tipRow(keyLine('day'), store.formatScore(avg), 'Tagesdurchschnitt'));
+      if (t != null) box.append(tipRow(keyLine('trend'), store.formatScore(t), '7-Tage-Schnitt'));
       for (const sl of store.SLOTS) {
         const e = entries[sl.id];
         if (e) box.append(tipRow(keyDot(e.mood), store.formatMood(e.mood), `${sl.label} · ${store.describeMood(e.mood)}`));
@@ -494,7 +494,7 @@ function medTip(m, date) {
   box.append(h('div', { class: 'tip-note' }, p.end ? `${formatDayMonth(p.start)} – ${formatDayMonth(p.end)}` : `seit ${formatDayMonth(p.start)}`));
   const last = p.end && p.end < todayKey() ? p.end : todayKey();
   const w = store.windowAverage(p.start, last);
-  if (w.avg != null) box.append(tipRow(keyLine('day'), num1(w.avg), `Ø in dieser Zeit (${w.days} T.)`));
+  if (w.avg != null) box.append(tipRow(keyLine('day'), store.formatScore(w.avg), `Ø in dieser Zeit (${w.days} T.)`));
   for (const ev of store.medEvents(m)) if (ev.date === date) box.append(h('div', { class: 'tip-note' }, eventText(ev)));
   return box;
 }
@@ -515,10 +515,10 @@ function activityTip(lane, date) {
     box.append(h('div', { class: 'tip-note' }, m.end == null ? `seit ${formatDayMonth(m.date)} · läuft` : `${formatDayMonth(m.date)} – ${formatDayMonth(m.end)}`));
     const last = store.momentLast(m) < today ? store.momentLast(m) : today;
     const w = store.windowAverage(m.date, last);
-    if (w.avg != null) box.append(tipRow(keyLine('day'), num1(w.avg), `Ø währenddessen (${w.days} T.)`));
+    if (w.avg != null) box.append(tipRow(keyLine('day'), store.formatScore(w.avg), `Ø währenddessen (${w.days} T.)`));
   } else {
     const avg = store.dayAverage(date);
-    box.append(avg != null ? tipRow(keyLine('day'), num1(avg), 'Ø an diesem Tag') : h('div', { class: 'tip-empty' }, 'Kein Stimmungseintrag'));
+    box.append(avg != null ? tipRow(keyLine('day'), store.formatScore(avg), 'Ø an diesem Tag') : h('div', { class: 'tip-empty' }, 'Kein Stimmungseintrag'));
   }
   if (m.note) box.append(h('div', { class: 'tip-note' }, m.note));
   return box;

@@ -4,7 +4,7 @@ import * as push from './push.js';
 import { timelineChart, timelineLegend, eventText } from './charts.js';
 import {
   h, s, icon, todayKey, addDays, diffDays, fromKey, formatLong, formatDayMonth, formatShort, formatWeekday,
-  relativeDay, num1, signed1,
+  relativeDay,
 } from './util.js';
 
 const $ = sel => document.querySelector(sel);
@@ -100,7 +100,7 @@ function segmented(el, value, onChange) {
 
 function deltaEl(delta) {
   const dir = delta > 0.15 ? 'up' : delta < -0.15 ? 'down' : 'flat';
-  return h('span', { class: `delta ${dir}` }, icon(dir === 'up' ? 'i-up' : dir === 'down' ? 'i-down' : 'i-flat'), signed1(delta));
+  return h('span', { class: `delta ${dir}` }, icon(dir === 'up' ? 'i-up' : dir === 'down' ? 'i-down' : 'i-flat'), store.formatScoreDelta(delta));
 }
 
 function openDatePicker(input) {
@@ -400,9 +400,9 @@ function periodSheet(id) {
     ['Beginn', formatLong(m.date)],
     ['Ende', m.end == null ? 'offen' : formatLong(m.end)],
     ['Dauer', e.started ? `${e.days} ${e.days === 1 ? 'Tag' : 'Tage'}${ongoing ? ' bisher' : ''}` : '–'],
-    ['Ø Stimmung', e.during.avg != null ? `${num1(e.during.avg)} · ${e.during.days} ${e.during.days === 1 ? 'Tag' : 'Tage'} mit Eintrag` : 'noch keine Einträge'],
-    ['Davor (4 Wochen)', e.before.avg != null ? `Ø ${num1(e.before.avg)}${e.during.avg != null ? ` · ${signed1(e.during.avg - e.before.avg)} währenddessen` : ''}` : '–'],
-    ...(e.ended && e.after.avg != null ? [['Danach (4 Wochen)', `Ø ${num1(e.after.avg)}`]] : []),
+    ['Ø Stimmung', e.during.avg != null ? `${store.formatScore(e.during.avg)} · ${e.during.days} ${e.during.days === 1 ? 'Tag' : 'Tage'} mit Eintrag` : 'noch keine Einträge'],
+    ['Davor (4 Wochen)', e.before.avg != null ? `Ø ${store.formatScore(e.before.avg)}${e.during.avg != null ? ` · ${store.formatScoreDelta(e.during.avg - e.before.avg)} währenddessen` : ''}` : '–'],
+    ...(e.ended && e.after.avg != null ? [['Danach (4 Wochen)', `Ø ${store.formatScore(e.after.avg)}`]] : []),
   ];
   openSheet(m.title,
     h('p', { class: 'sheet-text period-status' }, momentMark(colors, m, 'key-bar'), m.sick ? `Krank · ${status}` : status),
@@ -486,7 +486,7 @@ function renderWeek() {
   grid.push(h('div', { class: 'week-row-label' }, 'Ø'));
   for (const d of days) {
     const v = store.dayAverage(d);
-    grid.push(h('div', { class: `week-avg${v == null ? ' empty' : ''}` }, v == null ? '–' : num1(v)));
+    grid.push(h('div', { class: `week-avg${v == null ? ' empty' : ''}` }, v == null ? '–' : store.formatScore(v)));
   }
   $('#week-grid').replaceChildren(...grid);
 
@@ -494,9 +494,9 @@ function renderWeek() {
   const prev = store.windowAverage(addDays(days[0], -7), addDays(today, -7));
   const meta = $('#week-meta');
   if (cur.avg == null) meta.textContent = 'Deine Einträge der letzten 7 Tage erscheinen hier.';
-  else meta.replaceChildren(`Ø ${num1(cur.avg)}`, prev.avg != null ? ` · Woche davor Ø ${num1(prev.avg)}` : '');
+  else meta.replaceChildren(`Ø ${store.formatScore(cur.avg)}`, prev.avg != null ? ` · Woche davor Ø ${store.formatScore(prev.avg)}` : '');
 
-  $('#week-legend').replaceChildren(...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)));
+  $('#week-legend').replaceChildren(...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${store.formatScore(m.value)} ${m.label}`)));
 }
 
 /* ---------- mood value: faces + fine slider ---------- */
@@ -504,7 +504,8 @@ function renderWeek() {
 const fine = { suppressClickUntil: 0, dragging: false, hint: false };
 
 function setMood(v) {
-  const next = store.roundMood(v);
+  // whole numbers on the −10 … +10 scale: one step there is 0.2 of the stored 1 … 5
+  const next = store.roundMood(Math.round(v * 5) / 5);
   if (form.mood != null && Math.floor(next) !== Math.floor(form.mood)) {
     try { navigator.vibrate?.(6); } catch (e) { /* no haptics */ }
   }
@@ -533,8 +534,8 @@ function updateMoodUI() {
     wrap.style.setProperty('--tc', store.moodColor(v));
     $('#mood-thumb-value').textContent = store.formatMood(v);
     const slider = $('#mood-slider');
-    slider.setAttribute('aria-valuenow', v);
-    slider.setAttribute('aria-valuetext', `${store.formatMood(v)} von 5, ${store.describeMood(v)}`);
+    slider.setAttribute('aria-valuenow', store.score(v));
+    slider.setAttribute('aria-valuetext', `${store.formatMood(v)}, ${store.describeMood(v)}`);
   }
 
   const existing = store.getEntry(form.date, form.slot);
@@ -542,8 +543,8 @@ function updateMoodUI() {
   if (v == null) caption.replaceChildren('Tippe auf ein Gesicht.');
   else {
     const text = existing && !form.dirty
-      ? `Eingetragen: ${Number.isInteger(v) ? '' : store.formatMood(v) + ' · '}${store.describeMood(v)}`
-      : `${store.formatMood(v)} von 5 · ${store.describeMood(v)}`;
+      ? `Eingetragen: ${store.formatMood(v)} · ${store.describeMood(v)}`
+      : `${store.formatMood(v)} · ${store.describeMood(v)}`;
     caption.replaceChildren(text);
     // Only right after a face tap: that is when someone may not know the slider yet.
     if (fine.hint && form.dirty) caption.append(h('span', { class: 'hint' }, 'Für Zwischenwerte: Gesicht gedrückt halten und zur Seite ziehen'));
@@ -640,7 +641,7 @@ function initFineSlider() {
 
   slider.addEventListener('keydown', e => {
     if (form.mood == null) return;
-    const steps = { ArrowLeft: -0.1, ArrowDown: -0.1, ArrowRight: 0.1, ArrowUp: 0.1, PageDown: -1, PageUp: 1 };
+    const steps = { ArrowLeft: -0.2, ArrowDown: -0.2, ArrowRight: 0.2, ArrowUp: 0.2, PageDown: -1, PageUp: 1 };
     let next;
     if (e.key in steps) next = form.mood + steps[e.key];
     else if (e.key === 'Home') next = 1;
@@ -723,9 +724,9 @@ function renderVerlauf() {
   const delta = prev?.avg != null && st.avg != null ? st.avg - prev.avg : null;
   const dir = delta == null ? '' : delta > 0.15 ? 'up' : delta < -0.15 ? 'down' : 'flat';
   $('#stats').replaceChildren(
-    stat('Durchschnitt', st.avg == null ? '–' : num1(st.avg), st.avg == null ? 'noch keine Daten' : `von 5 · ${store.moodLabel(Math.round(st.avg))}`),
+    stat('Durchschnitt', st.avg == null ? '–' : store.formatScore(st.avg), st.avg == null ? 'noch keine Daten' : `${store.moodLabel(Math.round(st.avg))} · Skala −10 bis +10`),
     stat('Veränderung',
-      delta == null ? '–' : [icon(dir === 'up' ? 'i-up' : dir === 'down' ? 'i-down' : 'i-flat'), signed1(delta)],
+      delta == null ? '–' : [icon(dir === 'up' ? 'i-up' : dir === 'down' ? 'i-down' : 'i-flat'), store.formatScoreDelta(delta)],
       delta == null ? (all ? 'bei „Alle“ kein Vergleich' : 'kein Vergleichszeitraum') : `gegenüber den ${days} Tagen davor`, dir),
     stat('Einträge', String(st.count), possibleDays ? `von ${possibleDays * 3} möglichen` : 'bisher'),
   );
@@ -743,7 +744,7 @@ function renderVerlauf() {
   $('#layers').replaceChildren(...[hasMeds && layer('meds', 'Medikamente'), hasTherapies && layer('therapies', 'Therapien'), hasActs && layer('moments', 'Aktivitäten')].filter(Boolean));
   timelineLegend($('#timeline-legend'), { from, to });
   $('#band-legend').replaceChildren(
-    ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${m.value} ${m.label}`)),
+    ...store.MOODS.map(m => h('span', null, h('i', { style: { background: `var(--m${m.value})` } }), `${store.formatScore(m.value)} ${m.label}`)),
     h('span', null, h('i', { class: 'none' }), 'kein Eintrag'));
   timelineChart($('#timeline'), { from, to, meds: hasMeds && !!prefs.layers.meds, therapies: hasTherapies && !!prefs.layers.therapies, moments: hasActs && !!prefs.layers.moments });
 
@@ -754,8 +755,8 @@ function renderVerlauf() {
     ...st.slots.map(sl => h('div', { class: 'hbar' },
       h('span', { class: 'hbar-label' }, sl.label),
       h('div', { class: 'hbar-track' }, sl.avg != null ? h('div', { class: 'hbar-fill', style: { width: `${((sl.avg - 1) / 4) * 100}%` } }) : null),
-      h('span', { class: 'hbar-value' }, sl.avg == null ? '–' : num1(sl.avg), h('small', null, `${sl.n}×`)))),
-    h('p', { class: 'scale-note' }, 'Skala 1 bis 5. Ein voller Balken heißt „Sehr gut“.'),
+      h('span', { class: 'hbar-value' }, sl.avg == null ? '–' : store.formatScore(sl.avg), h('small', null, `${sl.n}×`)))),
+    h('p', { class: 'scale-note' }, 'Skala −10 bis +10, 0 ist okay. Ein voller Balken heißt „Sehr gut“ (+10).'),
   );
 
   renderEntryList();
@@ -789,7 +790,7 @@ function renderInsights(from, to) {
     it.mark,
     h('span', { class: 'insight-main' },
       h('span', { class: 'insight-name' }, it.name),
-      h('span', { class: 'insight-sub' }, `Ø ${num1(it.c.with.avg)} mit · Ø ${num1(it.c.without.avg)} ohne · ${it.c.with.days} + ${it.c.without.days} Tage`)),
+      h('span', { class: 'insight-sub' }, `Ø ${store.formatScore(it.c.with.avg)} mit · Ø ${store.formatScore(it.c.without.avg)} ohne · ${it.c.with.days} + ${it.c.without.days} Tage`)),
     deltaEl(it.c.with.avg - it.c.without.avg))));
 }
 
@@ -806,7 +807,7 @@ function renderEntryList() {
   list.replaceChildren(...shown.map(date => {
     const day = store.dayEntries(date);
     return h('div', { class: 'day-group' },
-      h('div', { class: 'day-group-head' }, h('h3', null, relativeDay(date)), h('span', null, `Ø ${num1(store.dayAverage(date))}`)),
+      h('div', { class: 'day-group-head' }, h('h3', null, relativeDay(date)), h('span', null, `Ø ${store.formatScore(store.dayAverage(date))}`)),
       ...store.SLOTS.filter(sl => day[sl.id]).map(sl => {
         const e = day[sl.id];
         return h('button', {
@@ -816,7 +817,7 @@ function renderEntryList() {
         h('span', { class: 'entry-face', style: { background: store.moodColor(e.mood) } }, face(store.moodLevel(e.mood))),
         h('span', { class: 'entry-main' },
           h('span', { class: 'entry-title' },
-            Number.isInteger(e.mood) ? store.moodLabel(e.mood) : `${store.formatMood(e.mood)} · ${store.describeMood(e.mood)}`,
+            `${store.formatMood(e.mood)} · ${store.describeMood(e.mood)}`,
             h('span', null, ` · ${sl.label}`)),
           e.note ? h('p', { class: 'entry-note' }, e.note) : null));
       }));
@@ -959,7 +960,7 @@ function medSheet(id) {
   const row = (label, data, cls) => h('div', { class: 'hbar' },
     h('span', { class: 'hbar-label' }, label),
     h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%`, background: cls === 'with' ? `var(--c${m.color + 1})` : null } }) : null),
-    h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
+    h('span', { class: 'hbar-value' }, data.avg == null ? '–' : store.formatScore(data.avg), h('small', null, `${data.days} Tage`)));
   let hint;
   if (c.with.days < 5 && c.without.days < 5) hint = 'Noch zu wenige Tage mit Stimmungseintrag.';
   else if (c.without.days < 5) hint = 'Fast durchgehend, deshalb gibt es kaum Vergleichstage.';
@@ -971,9 +972,9 @@ function medSheet(id) {
   const eventRow = ev => {
     const ec = store.eventComparison(ev.date);
     let body;
-    if (!ec.started) body = [`Vorher Ø ${num1(ec.before.avg)}`, h('span', { class: 'vals' }, ` · Vergleich ab ${formatDayMonth(ec.afterStart)} möglich`)];
+    if (!ec.started) body = [`Vorher Ø ${store.formatScore(ec.before.avg)}`, h('span', { class: 'vals' }, ` · Vergleich ab ${formatDayMonth(ec.afterStart)} möglich`)];
     else if (ec.before.avg == null || ec.after.avg == null) body = [ec.before.avg == null ? 'Keine Einträge in den 4 Wochen davor.' : 'Noch keine Einträge in Woche 3 bis 6.'];
-    else body = [h('span', { class: 'vals' }, `Ø ${num1(ec.before.avg)} → ${ec.complete ? '' : 'bisher '}Ø ${num1(ec.after.avg)}`), deltaEl(ec.after.avg - ec.before.avg)];
+    else body = [h('span', { class: 'vals' }, `Ø ${store.formatScore(ec.before.avg)} → ${ec.complete ? '' : 'bisher '}Ø ${store.formatScore(ec.after.avg)}`), deltaEl(ec.after.avg - ec.before.avg)];
     return h('div', { class: 'event' },
       h('div', { class: 'event-date' }, formatShort(ev.date)),
       h('div', null, h('div', { class: 'event-title' }, eventText(ev)), h('p', { class: 'event-body' }, ...body)));
@@ -1053,7 +1054,7 @@ const momentMark = (colors, m, cls = m.span ? 'key-bar' : 'key-dot') => (m.sick
 const hbarRow = (label, data, cls, color) => h('div', { class: 'hbar' },
   h('span', { class: 'hbar-label' }, label),
   h('div', { class: 'hbar-track' }, data.avg != null ? h('div', { class: `hbar-fill ${cls}`, style: { width: `${((data.avg - 1) / 4) * 100}%`, ...(color ? { background: color } : {}) } }) : null),
-  h('span', { class: 'hbar-value' }, data.avg == null ? '–' : num1(data.avg), h('small', null, `${data.days} Tage`)));
+  h('span', { class: 'hbar-value' }, data.avg == null ? '–' : store.formatScore(data.avg), h('small', null, `${data.days} Tage`)));
 
 function renderAlltag() {
   const moments = store.getState().moments;
@@ -1136,7 +1137,7 @@ function activitySheet(title) {
       h('span', { class: 'other-main' },
         h('span', { class: 'other-title' }, m.span ? 'Zeitspanne' : 'Tag', !m.archived && store.momentRunning(m) ? h('span', { class: 'chip running' }, 'läuft') : null),
         m.note ? h('span', { class: 'other-note' }, m.note) : null),
-      mood != null ? h('span', { class: 'other-mood', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, num1(mood)) : null);
+      mood != null ? h('span', { class: 'other-mood', style: { background: store.moodColor(Math.round(mood * 10) / 10) } }, store.formatScore(mood)) : null);
   };
 
   // Periods: 4 weeks before, during (so far) and up to 4 weeks after, for each period (newest first).

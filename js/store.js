@@ -24,7 +24,20 @@ export const MOODS = [
 export const roundMood = v => Math.round(Math.min(5, Math.max(1, v)) * 10) / 10;
 export const moodLevel = v => Math.min(5, Math.max(1, Math.round(v)));
 export const moodLabel = v => MOODS.find(m => m.value === moodLevel(v))?.label ?? '';
-export const formatMood = v => (Number.isInteger(v) ? String(v) : v.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+// Shown as −10 … +10 with 0 = Okay (Sehr schlecht −10, Schlecht −5, Gut +5, Sehr gut +10).
+// Stored values stay 1 … 5, so backups, sync and older entries keep working.
+export const score = v => Math.round((v - 3) * 50) / 10;
+const fmtSigned = (n, zero = '0') => {
+  const r = Math.round(n * 10) / 10;
+  if (r === 0) return zero;
+  const abs = Math.abs(r).toLocaleString('de-DE', { minimumFractionDigits: Number.isInteger(r) ? 0 : 1, maximumFractionDigits: 1 });
+  return (r > 0 ? '+' : '−') + abs;
+};
+// a mood (single value or average) on the −10 … +10 scale
+export const formatMood = v => fmtSigned(score(v));
+export const formatScore = formatMood;
+// a difference between two moods, on the same scale
+export const formatScoreDelta = d => fmtSigned(d * 5, '±0');
 export const describeMood = v => (Number.isInteger(v) ? moodLabel(v) : `zwischen ${moodLabel(Math.floor(v))} und ${moodLabel(Math.ceil(v))}`);
 
 // CSS color for a mood; values between two levels blend their colors.
@@ -720,7 +733,7 @@ export function exportCSV() {
     const str = String(v ?? '');
     return /[";\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
   };
-  const rows = [['Datum', 'Wochentag', 'Tageszeit', 'Stimmung (1-5)', 'Stimmung', 'Notiz', 'Medikamente & Therapien', 'Anderes']];
+  const rows = [['Datum', 'Wochentag', 'Tageszeit', 'Stimmung (−10 bis +10)', 'Stimmung', 'Notiz', 'Medikamente & Therapien', 'Anderes']];
   for (const e of state.entries) {
     const meds = state.meds
       .map(m => [m, activePhase(m, e.date)])
