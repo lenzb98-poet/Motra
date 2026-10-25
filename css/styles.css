@@ -1240,3 +1240,6 @@ textarea, .field input, .field select, .day-add input { border-color: var(--hair
   .sheet { background: #181622; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .sheet::backdrop { background: rgba(6, 5, 12, 0.75); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+/* save button, first tap: asks "Aktivitäten?" before the second tap saves */
+.btn.primary.armed { background: var(--accent-strong); box-shadow: 0 0 0 3px rgba(180, 165, 245, 0.25); }

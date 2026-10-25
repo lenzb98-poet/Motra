@@ -211,6 +211,7 @@ function renderView() {
 const form = { date: todayKey(), slot: store.currentSlot(), mood: null, note: '', dirty: false, touched: false };
 
 function loadFormEntry() {
+  saveArmed = false;
   const e = store.getEntry(form.date, form.slot);
   form.mood = e?.mood ?? null;
   fine.hint = false;
@@ -552,11 +553,16 @@ function updateMoodUI() {
   updateSaveButton();
 }
 
+// Saving takes two taps: the first one asks "Aktivitäten?" and opens "Was war heute?", so the
+// activities aren't forgotten; the second one saves. Changing the time of day or the date resets it.
+let saveArmed = false;
 function updateSaveButton() {
   const existing = store.getEntry(form.date, form.slot);
   const save = $('#btn-save');
   save.disabled = form.mood == null || (existing && !form.dirty);
-  save.textContent = existing ? (form.dirty ? 'Änderung speichern' : 'Gespeichert') : `${store.slotLabel(form.slot)} speichern`;
+  if (save.disabled) saveArmed = false;
+  save.classList.toggle('armed', saveArmed);
+  save.textContent = saveArmed ? 'Aktivitäten?' : existing ? (form.dirty ? 'Änderung speichern' : 'Gespeichert') : `${store.slotLabel(form.slot)} speichern`;
 }
 
 // Value under a screen x position, measured from the first to the last face centre.
@@ -684,6 +690,14 @@ function initHeute() {
   $('#entry-form').addEventListener('submit', e => {
     e.preventDefault();
     if (!form.mood) return;
+    if (!saveArmed) {
+      saveArmed = true;
+      showEntryTab('day');
+      updateSaveButton();
+      $('#panel-day').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    saveArmed = false;
     const created = store.saveEntry({ date: form.date, slot: form.slot, mood: form.mood, note: form.note.trim() });
     form.dirty = false;
     store.requestPersistence();

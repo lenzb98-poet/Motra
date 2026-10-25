@@ -1,5 +1,5 @@
 // Offline support: serve the app from cache, refresh the cache in the background.
-const CACHE = 'motra-v65';
+const CACHE = 'motra-v66';
 const ASSETS = [
   './',
   'manifest.webmanifest',
