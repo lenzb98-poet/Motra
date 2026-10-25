@@ -9,7 +9,7 @@ Die Daten liegen zuerst im Browser auf deinem Gerät (`localStorage`). Optional 
 Motra hat vier Reiter mit je einer Aufgabe: **Heute** zum Eintragen, **Verlauf** zum Verstehen, **Therapien** und **Alltag** zum Verwalten. Details öffnen sich in einem Fenster, wenn du etwas antippst.
 
 - **Heute**
-  - Stimmung auf einer Skala von −10 bis +10 (0 = okay) für Morgen, Mittag oder Abend; die fünf Gesichter stehen für −10, −5, 0, +5 und +10. Vergangene Tage über das Datum nachtragen. Gesicht gedrückt halten und zur Seite ziehen öffnet den Feinregler für jeden ganzen Wert dazwischen, z. B. +3. (Intern werden die Werte weiter als 1 bis 5 gespeichert, damit Sicherungen und Sync unverändert funktionieren.)
+  - Stimmung auf einer Skala von −10 bis +10 (0 = okay) für Morgen, Mittag oder Abend; die fünf Gesichter stehen für −10, −5, 0, +5 und +10. Vergangene Tage über das Datum nachtragen. Gesicht gedrückt halten und zur Seite ziehen öffnet den Feinregler für Werte in halben Schritten dazwischen, z. B. +2,5 oder +3. (Intern werden die Werte weiter als 1 bis 5 gespeichert, damit Sicherungen und Sync unverändert funktionieren.)
   - Unter den Gesichtern zwei Reiter: **„Was war heute?“** (standardmäßig offen) und **„Notiz“** (ohne dass die Tastatur von selbst aufgeht). In „Was war heute?“ setzt du Aktivitäten mit einem Tipp oder nimmst sie weg, neue mit „＋ Neu“. Laufende Zeitspannen und Krankheiten stehen darüber, ein Tipp zeigt Details und beendet sie. Ein Zähler am Reiter zeigt, wie viel für den Tag eingetragen ist.
   - „Deine Woche“: die letzten 7 Tage als Farbraster.
 - **Verlauf**

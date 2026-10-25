@@ -504,8 +504,8 @@ function renderWeek() {
 const fine = { suppressClickUntil: 0, dragging: false, hint: false };
 
 function setMood(v) {
-  // whole numbers on the −10 … +10 scale: one step there is 0.2 of the stored 1 … 5
-  const next = store.roundMood(Math.round(v * 5) / 5);
+  // half steps on the −10 … +10 scale: 0.5 there is 0.1 of the stored 1 … 5
+  const next = store.roundMood(v);
   if (form.mood != null && Math.floor(next) !== Math.floor(form.mood)) {
     try { navigator.vibrate?.(6); } catch (e) { /* no haptics */ }
   }
@@ -641,7 +641,7 @@ function initFineSlider() {
 
   slider.addEventListener('keydown', e => {
     if (form.mood == null) return;
-    const steps = { ArrowLeft: -0.2, ArrowDown: -0.2, ArrowRight: 0.2, ArrowUp: 0.2, PageDown: -1, PageUp: 1 };
+    const steps = { ArrowLeft: -0.1, ArrowDown: -0.1, ArrowRight: 0.1, ArrowUp: 0.1, PageDown: -1, PageUp: 1 };
     let next;
     if (e.key in steps) next = form.mood + steps[e.key];
     else if (e.key === 'Home') next = 1;
