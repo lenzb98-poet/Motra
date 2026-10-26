@@ -33,11 +33,21 @@ const fmtSigned = (n, zero = '0') => {
   const abs = Math.abs(r).toLocaleString('de-DE', { minimumFractionDigits: Number.isInteger(r) ? 0 : 1, maximumFractionDigits: 1 });
   return (r > 0 ? '+' : '−') + abs;
 };
-// a mood (single value or average) on the −10 … +10 scale
-export const formatMood = v => fmtSigned(score(v));
-export const formatScore = formatMood;
+// Which scale is shown: 'ten' (−10 … +10, 0 = Okay) or 'five' (1 … 5). A per-device setting;
+// the stored values don't depend on it.
+let scaleMode = 'ten';
+export const setScale = mode => { scaleMode = mode === 'five' ? 'five' : 'ten'; };
+export const getScale = () => scaleMode;
+export const scaleName = () => (scaleMode === 'five' ? '1 bis 5' : '−10 bis +10');
+const fmtPlain = v => {
+  const r = Math.round(v * 10) / 10;
+  return r.toLocaleString('de-DE', { minimumFractionDigits: Number.isInteger(r) ? 0 : 1, maximumFractionDigits: 1 });
+};
+// a mood (single value or average) on the chosen scale
+export const formatMood = v => (scaleMode === 'five' ? fmtPlain(v) : fmtSigned(score(v)));
+export const formatScore = v => formatMood(v);
 // a difference between two moods, on the same scale
-export const formatScoreDelta = d => fmtSigned(d * 5, '±0');
+export const formatScoreDelta = d => fmtSigned(scaleMode === 'five' ? d : d * 5, '±0');
 export const describeMood = v => (Number.isInteger(v) ? moodLabel(v) : `zwischen ${moodLabel(Math.floor(v))} und ${moodLabel(Math.ceil(v))}`);
 
 // CSS color for a mood; values between two levels blend their colors.
@@ -733,7 +743,7 @@ export function exportCSV() {
     const str = String(v ?? '');
     return /[";\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
   };
-  const rows = [['Datum', 'Wochentag', 'Tageszeit', 'Stimmung (−10 bis +10)', 'Stimmung', 'Notiz', 'Medikamente & Therapien', 'Anderes']];
+  const rows = [['Datum', 'Wochentag', 'Tageszeit', `Stimmung (${scaleName()})`, 'Stimmung', 'Notiz', 'Medikamente & Therapien', 'Anderes']];
   for (const e of state.entries) {
     const meds = state.meds
       .map(m => [m, activePhase(m, e.date)])

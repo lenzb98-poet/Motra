@@ -13,7 +13,7 @@ const $ = sel => document.querySelector(sel);
 
 const PREFS_KEY = 'motra.prefs';
 const LEGACY_PREFS_KEY = 'sutra.prefs';
-let prefs = { range: '30', layers: { meds: true, therapies: true, moments: false }, kindFilter: 'all', backupHiddenOn: null };
+let prefs = { range: '30', layers: { meds: true, therapies: true, moments: false }, kindFilter: 'all', backupHiddenOn: null, scale: 'ten' };
 try {
   let saved = localStorage.getItem(PREFS_KEY);
   if (saved == null && (saved = localStorage.getItem(LEGACY_PREFS_KEY)) != null) {
@@ -535,7 +535,7 @@ function updateMoodUI() {
     wrap.style.setProperty('--tc', store.moodColor(v));
     $('#mood-thumb-value').textContent = store.formatMood(v);
     const slider = $('#mood-slider');
-    slider.setAttribute('aria-valuenow', store.score(v));
+    slider.setAttribute('aria-valuenow', store.getScale() === 'five' ? v : store.score(v));
     slider.setAttribute('aria-valuetext', `${store.formatMood(v)}, ${store.describeMood(v)}`);
   }
 
@@ -738,7 +738,7 @@ function renderVerlauf() {
   const delta = prev?.avg != null && st.avg != null ? st.avg - prev.avg : null;
   const dir = delta == null ? '' : delta > 0.15 ? 'up' : delta < -0.15 ? 'down' : 'flat';
   $('#stats').replaceChildren(
-    stat('Durchschnitt', st.avg == null ? '–' : store.formatScore(st.avg), st.avg == null ? 'noch keine Daten' : `${store.moodLabel(Math.round(st.avg))} · Skala −10 bis +10`),
+    stat('Durchschnitt', st.avg == null ? '–' : store.formatScore(st.avg), st.avg == null ? 'noch keine Daten' : `${store.moodLabel(Math.round(st.avg))} · Skala ${store.scaleName()}`),
     stat('Veränderung',
       delta == null ? '–' : [icon(dir === 'up' ? 'i-up' : dir === 'down' ? 'i-down' : 'i-flat'), store.formatScoreDelta(delta)],
       delta == null ? (all ? 'bei „Alle“ kein Vergleich' : 'kein Vergleichszeitraum') : `gegenüber den ${days} Tagen davor`, dir),
@@ -770,7 +770,7 @@ function renderVerlauf() {
       h('span', { class: 'hbar-label' }, sl.label),
       h('div', { class: 'hbar-track' }, sl.avg != null ? h('div', { class: 'hbar-fill', style: { width: `${((sl.avg - 1) / 4) * 100}%` } }) : null),
       h('span', { class: 'hbar-value' }, sl.avg == null ? '–' : store.formatScore(sl.avg), h('small', null, `${sl.n}×`)))),
-    h('p', { class: 'scale-note' }, 'Skala −10 bis +10, 0 ist okay. Ein voller Balken heißt „Sehr gut“ (+10).'),
+    h('p', { class: 'scale-note' }, store.getScale() === 'five' ? 'Skala 1 bis 5, 3 ist okay. Ein voller Balken heißt „Sehr gut“ (5).' : 'Skala −10 bis +10, 0 ist okay. Ein voller Balken heißt „Sehr gut“ (+10).'),
   );
 
   renderEntryList();
@@ -1457,6 +1457,7 @@ function settingsSheet() {
       h('dt', null, 'Aktivitäten'), h('dd', null, String(st.moments.length)),
       h('dt', null, 'Letzte Sicherung'), h('dd', null, last ? formatShort(last.slice(0, 10)) : 'noch nie')),
 
+    scaleSection(),
     remindersSection(),
     syncSection(),
 
@@ -1547,6 +1548,31 @@ $('#btn-more-entries').addEventListener('click', () => { listDays += 14; renderE
 const SLOT_NAMES = { morning: 'Morgen', noon: 'Mittag', evening: 'Abend' };
 
 // The "Erinnerungen" part of the settings sheet.
+// Which scale the app shows. Only the display changes; entries stay as they are.
+function scaleSection() {
+  const opts = [{ id: 'ten', label: '−10 bis +10' }, { id: 'five', label: '1 bis 5' }];
+  const seg = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': 'Skala' }, ...opts.map(o => h('button', {
+    type: 'button', role: 'radio', 'aria-checked': String(store.getScale() === o.id),
+    onclick: () => { prefs.scale = o.id; savePrefs(); applyScale(); settingsSheet(); },
+  }, o.label)));
+  return h('section', { class: 'sheet-section' },
+    h('h3', null, 'Skala'),
+    h('p', { class: 'sheet-text' }, store.getScale() === 'five'
+      ? 'Stimmung von 1 (sehr schlecht) bis 5 (sehr gut), 3 ist okay.'
+      : 'Stimmung von −10 (sehr schlecht) bis +10 (sehr gut), 0 ist okay.'),
+    seg,
+    h('p', { class: 'sheet-text' }, 'Deine Einträge bleiben, wie sie sind. Es ändert sich nur, wie sie angezeigt werden.'));
+}
+function applyScale() {
+  store.setScale(prefs.scale);
+  const five = store.getScale() === 'five';
+  const slider = $('#mood-slider');
+  slider.setAttribute('aria-valuemin', five ? '1' : '-10');
+  slider.setAttribute('aria-valuemax', five ? '5' : '10');
+  renderView();
+  if (form.mood != null) updateMoodUI();
+}
+
 function remindersSection() {
   const box = h('section', { class: 'sheet-section', id: 'reminders-section' }, h('h3', null, 'Erinnerungen'));
   const state = push.support();
@@ -1957,6 +1983,8 @@ function renderBanners() {
 /* ---------------- boot ---------------- */
 
 store.init();
+store.setScale(prefs.scale);
+if (store.getScale() === 'five') { $('#mood-slider').setAttribute('aria-valuemin', '1'); $('#mood-slider').setAttribute('aria-valuemax', '5'); }
 store.subscribe(({ remote } = {}) => {
   // Changes from another device: show them in the form too, unless you're in the middle of editing.
   if (remote && !form.dirty) loadFormEntry();
